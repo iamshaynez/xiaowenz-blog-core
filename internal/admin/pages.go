@@ -49,7 +49,12 @@ func (h *Handler) subscribersPage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	total, _ := h.store.CountSubscribers(status, search)
+	total, err := h.store.CountSubscribers(status, search)
+	if err != nil {
+		h.log.Error("count subscribers", "err", err)
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 	h.render(w, "subscribers.html", map[string]any{
 		"Title": "订阅名单",
 		"Subs":  subs, "Total": total, "Page": page,
@@ -112,10 +117,24 @@ func (h *Handler) exportSubscribers(w http.ResponseWriter, r *http.Request) {
 		if s.ConfirmedAt > 0 {
 			confirmed = "1"
 		}
-		_ = cw.Write([]string{s.Email, s.Status, confirmed,
+		_ = cw.Write([]string{neutralizeCell(s.Email), s.Status, confirmed,
 			strconv.FormatInt(s.CreatedAt, 10), strconv.FormatInt(s.ConfirmedAt, 10)})
 	}
 	cw.Flush()
+}
+
+// neutralizeCell defuses CSV formula injection: RFC 5322 atext lets a local
+// part start with =, +, - or @, and a spreadsheet app would execute such a
+// cell as a formula on open. The leading quote marks it as text.
+func neutralizeCell(v string) string {
+	if v == "" {
+		return v
+	}
+	switch v[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + v
+	}
+	return v
 }
 
 // deleteSubscriber removes one row by id.
@@ -179,8 +198,16 @@ func (h *Handler) statsJSON(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	active, _ := h.store.CountSubscribers("active", "")
-	pending, _ := h.store.CountComments("pending")
+	active, err := h.store.CountSubscribers("active", "")
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	pending, err := h.store.CountComments("pending")
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"pv_30d":             pv,
@@ -194,10 +221,26 @@ func (h *Handler) statsJSON(w http.ResponseWriter, r *http.Request) {
 // statsPage renders the same numbers as a table.
 func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().Add(-30 * 24 * time.Hour).Unix()
-	pv, uv, _ := h.store.PageviewStats(since)
-	downloads, _ := h.store.DownloadStats(since)
-	active, _ := h.store.CountSubscribers("active", "")
-	pending, _ := h.store.CountComments("pending")
+	pv, uv, err := h.store.PageviewStats(since)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	downloads, err := h.store.DownloadStats(since)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	active, err := h.store.CountSubscribers("active", "")
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	pending, err := h.store.CountComments("pending")
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 	h.render(w, "stats.html", map[string]any{
 		"Title": "统计", "PV30": pv, "UV30": uv,
 		"ActiveSubs": active, "PendingComments": pending, "Downloads": downloads,

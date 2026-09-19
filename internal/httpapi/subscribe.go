@@ -104,14 +104,28 @@ func (s *Server) handleUnsubPage(w http.ResponseWriter, r *http.Request) {
 	_ = unsubPageTemplate.Execute(w, map[string]string{"Token": token})
 }
 
+// maxUnsubBodyBytes caps POST /api/unsub bodies. The endpoint is public and
+// unauthenticated (SPEC §3.1); a token is 64 hex chars, so 4 KiB is generous
+// and an unbounded decoder would buffer attacker-sized payloads in memory.
+const maxUnsubBodyBytes = 4 << 10
+
 // handleUnsub executes the unsubscribe on POST only.
 func (s *Server) handleUnsub(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUnsubBodyBytes)
 	token := r.FormValue("token")
 	if token == "" {
 		var body struct {
 			Token string `json:"token"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			var mbe *http.MaxBytesError
+			if errors.As(err, &mbe) {
+				writeErr(w, http.StatusRequestEntityTooLarge, "body too large")
+				return
+			}
+			writeErr(w, http.StatusBadRequest, "invalid body")
+			return
+		}
 		token = body.Token
 	}
 	if err := s.store.UnsubscribeByToken(token); err != nil {

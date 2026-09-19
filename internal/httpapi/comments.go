@@ -37,6 +37,10 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "post required")
 		return
 	}
+	if n := utf8.RuneCountInString(req.Post); n > 200 {
+		writeErr(w, http.StatusBadRequest, "post too long (max 200 chars)")
+		return
+	}
 	if n := utf8.RuneCountInString(req.Name); n < 1 || n > 50 {
 		writeErr(w, http.StatusBadRequest, "name must be 1-50 chars")
 		return

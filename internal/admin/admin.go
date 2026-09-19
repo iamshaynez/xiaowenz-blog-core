@@ -77,6 +77,7 @@ func (h *Handler) Routes() http.Handler {
 	// Everything below requires a valid session.
 	guarded := http.NewServeMux()
 	guarded.HandleFunc("GET /admin", h.dashboard)
+	guarded.HandleFunc("POST /admin/logout", h.logout)
 	guarded.HandleFunc("GET /admin/subscribers", h.subscribersPage)
 	guarded.HandleFunc("POST /admin/subscribers/import", h.importSubscribers)
 	guarded.HandleFunc("GET /admin/subscribers/export", h.exportSubscribers)
@@ -216,6 +217,23 @@ func adminClientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// logout expires the session cookie client-side. The cookie is a stateless
+// HMAC value, so a copied cookie stays valid until its own expiry — rotating
+// CORE_ADMIN_TOKEN is the server-side kill switch.
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/admin",
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+	h.log.Info("admin logout")
+	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }
 
 func writeErr(w http.ResponseWriter, status int, msg string) {

@@ -106,6 +106,11 @@ func (h *Handler) mediaUpload(w http.ResponseWriter, r *http.Request) {
 	contentType := header.Header.Get("Content-Type")
 	prefix := ""
 	switch {
+	case contentType == "image/svg" || contentType == "image/svg+xml":
+		// SVG matches image/* but executes scripts on the media origin —
+		// a stored-XSS carrier, rejected by name.
+		writeErr(w, http.StatusBadRequest, "svg uploads are not allowed")
+		return
 	case strings.HasPrefix(contentType, "image/"):
 		prefix = "images/"
 	case contentType == "audio/mpeg" || contentType == "audio/mp4":

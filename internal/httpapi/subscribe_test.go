@@ -299,3 +299,24 @@ func TestCORSPolicy(t *testing.T) {
 		t.Error("preflight must allow methods")
 	}
 }
+
+// The unsub endpoint is public and unauthenticated; its JSON fallback must
+// not buffer unbounded bodies (a token is 64 hex chars — 4 KiB is generous).
+func TestUnsubRejectsOversizedBody(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	sub, _ := st.UpsertPending("big@x.com", "tok", time.Now().Add(time.Hour))
+	_ = st.Activate(sub.ID)
+
+	body := `{"token":"` + sub.UnsubToken + `","pad":"` + strings.Repeat("A", 5<<20) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/unsub", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized unsub body: %d, want 413", rec.Code)
+	}
+	got, _ := st.GetSubscriberByEmail("big@x.com")
+	if got.Status != "active" {
+		t.Errorf("status = %q, want active (nothing executed)", got.Status)
+	}
+}

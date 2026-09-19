@@ -38,7 +38,7 @@ static site (Hugo/Pages) ──JS──▶ xiaowenz-blog-core (Go, single binary
 
 - Go 1.26, stdlib `net/http` only (ServeMux pattern routing) — no web framework
 - SQLite via `modernc.org/sqlite` (pure Go, no CGO) — static Docker image
-- All externalities behind interfaces (Mailer / Turnstile / S3 / clock): **106 behavioral tests, zero network access**, `-race` clean
+- All externalities behind interfaces (Mailer / Turnstile / S3 / clock): **124 behavioral tests, zero network access**, `-race` clean
 - TDD by constitution — see [AGENTS.md](AGENTS.md) and the functional contract [docs/SPEC.md](docs/SPEC.md)
 
 ## Quickstart

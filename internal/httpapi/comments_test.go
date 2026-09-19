@@ -2,10 +2,15 @@ package httpapi
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/turnstile"
 )
 
 func TestCommentSubmitNotifiesAdmin(t *testing.T) {
@@ -207,5 +212,94 @@ func TestModerateOneClickLinks(t *testing.T) {
 	c, _ = st.GetComment(cid)
 	if c.Status != "rejected" {
 		t.Errorf("status = %q, want rejected", c.Status)
+	}
+}
+
+// With CORE_ADMIN_TOKEN empty the moderation signing key degrades to a
+// publicly derivable constant, so forged approve/reject links would be
+// accepted. Empty token must disable one-click moderation like it disables
+// admin login (SPEC §1: 空 = admin 拒绝登录).
+func TestModerateDisabledWhenAdminTokenEmpty(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	cid, err := st.CreateComment("ep-09", "n", "a@b.c", "c", "hash", "ua")
+	if err != nil {
+		t.Fatalf("seed comment: %v", err)
+	}
+
+	// A second server over the same store with an empty admin token: its
+	// signing key is exactly the constant an outside attacker can compute.
+	empty := *srv.cfg
+	empty.AdminToken = ""
+	forged := NewServer(Deps{
+		Store: st, Mailer: &mailer.Fake{}, Verifier: &turnstile.Fake{Result: true},
+		Config: &empty, Logger: slog.New(slog.DiscardHandler),
+	})
+	t.Cleanup(forged.Close)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/comments/moderate?token="+forged.signModerate(cid, "approve"), nil)
+	rec := httptest.NewRecorder()
+	forged.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("forged moderate link accepted: %d, want 403", rec.Code)
+	}
+	c, _ := st.GetComment(cid)
+	if c.Status != "pending" {
+		t.Errorf("status = %q, want still pending", c.Status)
+	}
+}
+
+// A post slug of 200 runes is generous for any real permalink; an unbounded
+// field lets junk rows land in the DB and bloat the moderation console.
+func TestCommentPostLengthCapped(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	long := strings.Repeat("p", 201)
+	rec := doJSON(t, srv, http.MethodPost, "/api/comments", map[string]string{
+		"post": long, "name": "n", "email": "a@b.c", "content": "c", "turnstile_token": "t",
+	}, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("201-rune post: %d, want 400", rec.Code)
+	}
+	pending, _ := st.ListComments("pending")
+	if len(pending) != 0 {
+		t.Errorf("pending = %d, want 0 (nothing stored)", len(pending))
+	}
+
+	// 200 runes still accepted.
+	ok := strings.Repeat("p", 200)
+	rec = doJSON(t, srv, http.MethodPost, "/api/comments", map[string]string{
+		"post": ok, "name": "n", "email": "a@b.c", "content": "c", "turnstile_token": "t",
+	}, nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("200-rune post: %d, want 202", rec.Code)
+	}
+}
+
+// A moderation link is a capability carried inside an email; a leaked link
+// must not stay valid forever. Tokens carry an expiry covered by the HMAC.
+func TestModerateTokenExpires(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	cid, err := st.CreateComment("ep-10", "n", "a@b.c", "c", "hash", "ua")
+	if err != nil {
+		t.Fatalf("seed comment: %v", err)
+	}
+
+	expired := srv.signModerateAt(cid, "approve", time.Now().Add(-time.Minute))
+	req := httptest.NewRequest(http.MethodGet, "/api/comments/moderate?token="+expired, nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expired moderate token: %d, want 403", rec.Code)
+	}
+	c, _ := st.GetComment(cid)
+	if c.Status != "pending" {
+		t.Errorf("status = %q, want still pending", c.Status)
+	}
+
+	fresh := srv.signModerateAt(cid, "approve", time.Now().Add(time.Minute))
+	req = httptest.NewRequest(http.MethodGet, "/api/comments/moderate?token="+fresh, nil)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("fresh moderate token: %d, want 200", rec.Code)
 	}
 }

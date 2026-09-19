@@ -106,6 +106,10 @@ func TestSendToEachActiveWithPersonalUnsub(t *testing.T) {
 		if lu := m.Headers["List-Unsubscribe"]; !strings.Contains(lu, personal) {
 			t.Errorf("%s: List-Unsubscribe = %q, want it to contain %q", sub.Email, lu, personal)
 		}
+		// RFC 8058 one-click unsubscribe (Gmail & co. only honor the pair).
+		if lup := m.Headers["List-Unsubscribe-Post"]; lup != "List-Unsubscribe=One-Click" {
+			t.Errorf("%s: List-Unsubscribe-Post = %q, want %q", sub.Email, lup, "List-Unsubscribe=One-Click")
+		}
 		if !strings.Contains(m.HTML, "<h1>你好</h1>") {
 			t.Errorf("%s: body HTML missing", sub.Email)
 		}

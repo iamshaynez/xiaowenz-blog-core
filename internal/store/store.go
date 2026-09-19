@@ -89,18 +89,16 @@ func (s *Store) UpsertPending(email, confirmToken string, expires time.Time) (*S
 // GetSubscriberByEmail looks up a subscriber (email is normalized first).
 func (s *Store) GetSubscriberByEmail(email string) (*Subscriber, error) {
 	row := s.db.QueryRow(
-		`SELECT id, email, status, confirm_token, COALESCE(confirm_expires_at,0), unsub_token,
-		        created_at, COALESCE(confirmed_at,0), updated_at
-		 FROM subscribers WHERE email = ?`, normalizeEmail(email))
+		`SELECT `+subscriberCols+`
+		        FROM subscribers WHERE email = ?`, normalizeEmail(email))
 	return scanSubscriber(row)
 }
 
 // GetSubscriberByUnsubToken looks up a subscriber by unsubscribe token.
 func (s *Store) GetSubscriberByUnsubToken(token string) (*Subscriber, error) {
 	row := s.db.QueryRow(
-		`SELECT id, email, status, confirm_token, COALESCE(confirm_expires_at,0), unsub_token,
-		        created_at, COALESCE(confirmed_at,0), updated_at
-		 FROM subscribers WHERE unsub_token = ?`, token)
+		`SELECT `+subscriberCols+`
+		        FROM subscribers WHERE unsub_token = ?`, token)
 	return scanSubscriber(row)
 }
 
@@ -113,9 +111,8 @@ func (s *Store) Ping(ctx context.Context) error {
 // Expired or unknown tokens return an error.
 func (s *Store) ConfirmSubscriber(token string) (*Subscriber, error) {
 	row := s.db.QueryRow(
-		`SELECT id, email, status, confirm_token, COALESCE(confirm_expires_at,0), unsub_token,
-		        created_at, COALESCE(confirmed_at,0), updated_at
-		 FROM subscribers WHERE confirm_token = ? AND status = 'pending'`, token)
+		`SELECT `+subscriberCols+`
+		        FROM subscribers WHERE confirm_token = ? AND status = 'pending'`, token)
 	sub, err := scanSubscriber(row)
 	if err != nil {
 		return nil, err
@@ -167,9 +164,8 @@ func (s *Store) ListSubscribers(status, q string, offset, limit int) ([]Subscrib
 	where, args := subscriberWhere(status, q)
 	args = append(args, limit, offset)
 	rows, err := s.db.Query(
-		`SELECT id, email, status, confirm_token, COALESCE(confirm_expires_at,0), unsub_token,
-		        created_at, COALESCE(confirmed_at,0), updated_at
-		 FROM subscribers `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
+		`SELECT `+subscriberCols+`
+		        FROM subscribers `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list subscribers: %w", err)
 	}
@@ -213,9 +209,8 @@ func subscriberWhere(status, q string) (string, []any) {
 // ActiveSubscribers returns every active subscriber (newsletter fan-out).
 func (s *Store) ActiveSubscribers() ([]Subscriber, error) {
 	rows, err := s.db.Query(
-		`SELECT id, email, status, confirm_token, COALESCE(confirm_expires_at,0), unsub_token,
-		        created_at, COALESCE(confirmed_at,0), updated_at
-		 FROM subscribers WHERE status='active' ORDER BY id`)
+		`SELECT ` + subscriberCols + `
+		        FROM subscribers WHERE status='active' ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("active subscribers: %w", err)
 	}
@@ -246,8 +241,19 @@ func (s *Store) DeleteSubscriber(id int64) error {
 // ImportSubscribers bulk-activates pre-verified emails (legacy platform
 // migration): each becomes active with confirmed_at set; duplicates skip.
 // Rows that fail net/mail parsing are skipped and counted as invalid.
+// The whole batch commits as one transaction — a per-row implicit commit
+// would fsync once per email on a large CSV.
 func (s *Store) ImportSubscribers(emails []string) (imported, skipped, invalid int, err error) {
 	now := s.now().Unix()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("import begin: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
 	for _, raw := range emails {
 		email := normalizeEmail(raw)
 		addr, perr := mail.ParseAddress(email)
@@ -263,7 +269,7 @@ func (s *Store) ImportSubscribers(emails []string) (imported, skipped, invalid i
 		if terr != nil {
 			return imported, skipped, invalid, terr
 		}
-		res, terr := s.db.Exec(
+		res, terr := tx.Exec(
 			`INSERT OR IGNORE INTO subscribers
 			   (email, status, confirm_token, confirm_expires_at, unsub_token, created_at, confirmed_at, updated_at)
 			 VALUES (?, 'active', '', 0, ?, ?, ?, ?)`,
@@ -276,6 +282,9 @@ func (s *Store) ImportSubscribers(emails []string) (imported, skipped, invalid i
 		} else {
 			skipped++
 		}
+	}
+	if err = tx.Commit(); err != nil {
+		return imported, skipped, invalid, fmt.Errorf("import commit: %w", err)
 	}
 	return imported, skipped, invalid, nil
 }
@@ -309,9 +318,8 @@ func (s *Store) CreateComment(postSlug, name, email, content, ipHash, ua string)
 // GetComment fetches one comment by id.
 func (s *Store) GetComment(id int64) (*Comment, error) {
 	row := s.db.QueryRow(
-		`SELECT id, post_slug, author_name, author_email, content, status, ip_hash, ua,
-		        created_at, COALESCE(moderated_at,0)
-		 FROM comments WHERE id=?`, id)
+		`SELECT `+commentCols+`
+			 FROM comments WHERE id=?`, id)
 	c, err := scanComment(row)
 	if err != nil {
 		return nil, err
@@ -360,8 +368,8 @@ func (s *Store) ListApprovedComments(postSlug string) ([]Comment, error) {
 // ListComments returns comments for the admin console, filtered by status
 // (empty = all), newest first.
 func (s *Store) ListComments(status string) ([]Comment, error) {
-	q := `SELECT id, post_slug, author_name, author_email, content, status, ip_hash, ua,
-	             created_at, COALESCE(moderated_at,0) FROM comments`
+	q := `SELECT ` + commentCols + `
+			 FROM comments`
 	var args []any
 	if status != "" {
 		q += ` WHERE status=?`
@@ -423,9 +431,8 @@ func (s *Store) CreateNewsletter(subject, markdown, html string) (int64, error) 
 // GetNewsletter fetches one newsletter by id.
 func (s *Store) GetNewsletter(id int64) (*Newsletter, error) {
 	row := s.db.QueryRow(
-		`SELECT id, subject, markdown, html, status, sent_count, failed_count,
-		        created_at, COALESCE(sent_at,0)
-		 FROM newsletters WHERE id=?`, id)
+		`SELECT `+newsletterCols+`
+			 FROM newsletters WHERE id=?`, id)
 	n, err := scanNewsletter(row)
 	if err != nil {
 		return nil, err
@@ -436,9 +443,8 @@ func (s *Store) GetNewsletter(id int64) (*Newsletter, error) {
 // ListNewsletters returns all newsletters, newest first.
 func (s *Store) ListNewsletters() ([]Newsletter, error) {
 	rows, err := s.db.Query(
-		`SELECT id, subject, markdown, html, status, sent_count, failed_count,
-		        created_at, COALESCE(sent_at,0)
-		 FROM newsletters ORDER BY id DESC`)
+		`SELECT ` + newsletterCols + `
+			 FROM newsletters ORDER BY id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list newsletters: %w", err)
 	}
@@ -633,7 +639,7 @@ func (s *Store) CreateMedia(key, url string, bytes int64, contentType string) er
 // GetMediaByKey fetches one media row by object key.
 func (s *Store) GetMediaByKey(key string) (*Media, error) {
 	row := s.db.QueryRow(
-		`SELECT id, key, url, bytes, content_type, created_at FROM media WHERE key=?`, key)
+		`SELECT `+mediaCols+` FROM media WHERE key=?`, key)
 	m, err := scanMedia(row)
 	if err != nil {
 		return nil, err
@@ -644,7 +650,7 @@ func (s *Store) GetMediaByKey(key string) (*Media, error) {
 // ListMedia returns all media, newest first.
 func (s *Store) ListMedia() ([]Media, error) {
 	rows, err := s.db.Query(
-		`SELECT id, key, url, bytes, content_type, created_at FROM media ORDER BY id DESC`)
+		`SELECT ` + mediaCols + ` FROM media ORDER BY id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list media: %w", err)
 	}
@@ -661,6 +667,15 @@ func (s *Store) ListMedia() ([]Media, error) {
 }
 
 // --- scan helpers ---
+
+// Column lists shared by every SELECT so a new column lands in exactly one
+// place (a missed site would fail the scan-order contract at runtime).
+const (
+	subscriberCols = `id, email, status, confirm_token, COALESCE(confirm_expires_at,0), unsub_token, created_at, COALESCE(confirmed_at,0), updated_at`
+	commentCols    = `id, post_slug, author_name, author_email, content, status, ip_hash, ua, created_at, COALESCE(moderated_at,0)`
+	newsletterCols = `id, subject, markdown, html, status, sent_count, failed_count, created_at, COALESCE(sent_at,0)`
+	mediaCols      = `id, key, url, bytes, content_type, created_at`
+)
 
 type rowScanner interface{ Scan(dest ...any) error }
 

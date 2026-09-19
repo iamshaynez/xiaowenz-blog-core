@@ -139,17 +139,36 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, v any) bool {
 // clientIP resolves the caller's IP. X-Forwarded-For is honored only when
 // the immediate peer is a configured trusted proxy (CORE_TRUSTED_PROXIES);
 // otherwise the peer address is used, so a direct client cannot spoof its IP
-// to evade rate limits or poison stats.
+// to evade rate limits or poison stats. Within an honored XFF the walk starts
+// at the right (the entry our trusted proxy actually observed) and skips
+// further trusted proxies: a client may prepend arbitrary entries, so any
+// leftmost value is attacker-chosen.
 func (s *Server) clientIP(r *http.Request) string {
 	peer := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		peer = host
 	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if addr, err := netip.ParseAddr(peer); err == nil && s.cfg.TrustsProxy(addr) {
-			return strings.TrimSpace(strings.Split(xff, ",")[0])
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return peer
+	}
+	peerAddr, err := netip.ParseAddr(peer)
+	if err != nil || !s.cfg.TrustsProxy(peerAddr) {
+		return peer
+	}
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		entry := strings.TrimSpace(parts[i])
+		addr, err := netip.ParseAddr(entry)
+		if err != nil {
+			continue // malformed (client-supplied) entry — skip
+		}
+		if !s.cfg.TrustsProxy(addr) {
+			return entry
 		}
 	}
+	// Every hop is a trusted proxy: the chain never left our infra, so no
+	// entry is an outside claim; report the peer we actually see.
 	return peer
 }
 
@@ -181,9 +200,19 @@ func (s *Server) guardWrite(w http.ResponseWriter, r *http.Request, honeypot, to
 	return true
 }
 
-// signModerate builds the one-click moderation token: id.action.hmac.
+// moderateTTL bounds how long a one-click moderation link stays valid —
+// the link is a capability carried inside an email and must not live forever.
+const moderateTTL = 7 * 24 * time.Hour
+
+// signModerate builds the one-click moderation token:
+// id.action.expiry.hmac, where the HMAC covers the expiry.
 func (s *Server) signModerate(id int64, action string) string {
-	payload := strconv.FormatInt(id, 10) + "." + action
+	return s.signModerateAt(id, action, time.Now().Add(moderateTTL))
+}
+
+// signModerateAt signs a moderation token for a chosen expiry (tests).
+func (s *Server) signModerateAt(id int64, action string, expiry time.Time) string {
+	payload := strconv.FormatInt(id, 10) + "." + action + "." + strconv.FormatInt(expiry.Unix(), 10)
 	mac := hmac.New(sha256.New, s.signKey)
 	mac.Write([]byte(payload))
 	return payload + "." + hex.EncodeToString(mac.Sum(nil))
@@ -191,15 +220,25 @@ func (s *Server) signModerate(id int64, action string) string {
 
 // verifyModerate checks a moderation token in constant time.
 func (s *Server) verifyModerate(token string) (id int64, action string, ok bool) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
+	// Empty admin token disables the whole admin surface including one-click
+	// moderation: the signing key would otherwise be a public constant and
+	// links trivially forgeable.
+	if s.cfg.AdminToken == "" {
 		return 0, "", false
 	}
-	payload := parts[0] + "." + parts[1]
+	parts := strings.Split(token, ".")
+	if len(parts) != 4 {
+		return 0, "", false
+	}
+	expiry, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil || time.Now().Unix() > expiry {
+		return 0, "", false
+	}
+	payload := parts[0] + "." + parts[1] + "." + parts[2]
 	mac := hmac.New(sha256.New, s.signKey)
 	mac.Write([]byte(payload))
 	want := mac.Sum(nil)
-	got, err := hex.DecodeString(parts[2])
+	got, err := hex.DecodeString(parts[3])
 	if err != nil || !hmac.Equal(want, got) {
 		return 0, "", false
 	}

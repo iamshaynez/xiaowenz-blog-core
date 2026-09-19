@@ -43,17 +43,19 @@
 
 统一 JSON；错误格式 `{"error":"..."}`；写接口三件套（Turnstile/蜜罐 `website` 字段/IP 限流）。CORS 仅允许 `CORE_SITE_URL`。
 
+客户端 IP 解析：仅当对端地址属于 `CORE_TRUSTED_PROXIES` 时才读 `X-Forwarded-For`，且**自右向左**跳过受信代理、取第一个非受信跳（左侧条目可被客户端伪造前插，不得采信）；全部受信或无 XFF 时用对端地址。
+
 ### 3.1 订阅与验证（double opt-in）
 - `POST /api/subscribe` `{email, turnstile_token, website}` → 202 `{ok:true}`。
   - 幂等：已 active 直接 202 不发信；pending 重发验证邮件并刷新 token 有效期；unsubscribed 重新走验证流程。
   - 发验证邮件：链接 `{BASE_URL}/api/verify?token=...`，24h 有效。限流：5 次/小时/IP。
 - `GET /api/verify?token=` → 成功：置 active、发欢迎邮件、302 到 `{SITE_URL}/subscribed/`；失败/过期 → 302 到 `{SITE_URL}/subscribe-expired/`。
-- `GET /api/unsub?token=` → 200 确认页（HTML）；`POST /api/unsub` → 执行退订（防 prefetch 误触）。群发邮件必须带 `List-Unsubscribe` 头。
+- `GET /api/unsub?token=` → 200 确认页（HTML）；`POST /api/unsub` → 执行退订（防 prefetch 误触；body 上限 4 KiB）。群发邮件必须带 `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` 头（RFC 8058 一键退订）。
 
 ### 3.2 评论
-- `POST /api/comments` `{post, name, email, content, turnstile_token, website}` → 202，状态 pending，限流 10 次/小时/IP；内容长度 1–2000，name 1–50；给管理员发通知邮件（含 approve/reject 一键链接，带签名 token）。
+- `POST /api/comments` `{post, name, email, content, turnstile_token, website}` → 202，状态 pending，限流 10 次/小时/IP；post 长度 1–200，内容长度 1–2000，name 1–50；给管理员发通知邮件（含 approve/reject 一键链接，带签名 token）。
 - `GET /api/comments?post={slug}` → 200 `{comments:[{author_name, content, created_at}]}` 仅 approved，按时间正序。
-- `GET /api/comments/moderate?token=` → admin 邮件里的一键 approve/reject（HMAC 签名 comment_id+action）。
+- `GET /api/comments/moderate?token=` → admin 邮件里的一键 approve/reject（HMAC 签名 comment_id+action+expiry，链接 7 天有效）。`CORE_ADMIN_TOKEN` 为空时该端点整体禁用（签名密钥会退化为公开常量，必须 fail-closed）。
 
 ### 3.3 统计
 - `POST /api/pv` `{path, referrer}` → 204；尊重 `DNT: 1`（直接丢弃）；限流 60 次/分/IP。
@@ -64,16 +66,16 @@
 
 ## 4. 管理台（/admin，服务端渲染 html/template，无前端框架）
 
-认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（24h，HttpOnly/Secure/SameSite=Lax）。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。
+认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（24h，HttpOnly/Secure/SameSite=Lax）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
 
 - `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量。
-- 订阅名单：`GET /admin/subscribers?status=&q=`（分页 50）；`POST /admin/subscribers/import`（CSV 上传，列=email[,confirmed]，重复跳过，导入即 active 并记 confirmed_at；**导入不进验证流程**——名单来自旧平台已验证用户）；`GET /admin/subscribers/export`（CSV）；`POST /admin/subscribers/{id}/delete`。
+- 订阅名单：`GET /admin/subscribers?status=&q=`（分页 50）；`POST /admin/subscribers/import`（CSV 上传，列=email[,confirmed]，重复跳过，导入即 active 并记 confirmed_at；**导入不进验证流程**——名单来自旧平台已验证用户）；`GET /admin/subscribers/export`（CSV；公式注入中和：以 `=`/`+`/`-`/`@`/tab/CR 开头的单元格前缀单引号）；`POST /admin/subscribers/{id}/delete`。
 - 评论审核：`GET /admin/comments?status=pending`；`POST /admin/comments/{id}/approve|reject`。
 - Newsletter：`GET /admin/newsletters`（历史列表）；`GET /admin/newsletters/new`；`POST /admin/newsletters`（subject+markdown → goldmark 渲染 html，存 draft）；`GET /admin/newsletters/{id}`（预览 HTML）；`POST /admin/newsletters/{id}/send` → 后台 goroutine 逐人发送：
-  - 每人独立渲染：正文 + 页脚（含 `unsub?token=` 个人链接）；`List-Unsubscribe` 头；
+  - 每人独立渲染：正文 + 页脚（含 `unsub?token=` 个人链接）；`List-Unsubscribe` + `List-Unsubscribe-Post`（RFC 8058）头；
   - 限速 1 封/秒（可配置 `CORE_SEND_INTERVAL_MS`）；写 send_log；全部完成后置 sent + sent_count/failed_count；
   - 发信中服务重启：启动时将 `sending` 状态回退为 `draft` 并日志告警（幂等优先，宁重发不丢）。
-- 媒体：`POST /admin/media`（multipart，≤100MB，白名单 mime：image/*、audio/mpeg、audio/mp4）→ PutObject 到 R2 `images/` 或 `audio/` 前缀（文件名冲突加短随机后缀）→ 写 media 表 → 返回 `{url, bytes, key}`；`GET /admin/media` 列表。
+- 媒体：`POST /admin/media`（multipart，≤100MB，白名单 mime：image/*（**不含 svg/svg+xml**，存储型 XSS 载体）、audio/mpeg、audio/mp4）→ PutObject 到 R2 `images/` 或 `audio/` 前缀（文件名冲突加短随机后缀）→ 写 media 表 → 返回 `{url, bytes, key}`；`GET /admin/media` 列表。
 - 统计：`GET /admin/stats` JSON + `GET /admin/stats/html` 简单图表页（表格即可）。
 
 ## 5. 邮件

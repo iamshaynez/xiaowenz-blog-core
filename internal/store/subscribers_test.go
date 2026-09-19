@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -194,5 +195,42 @@ func TestImportSubscribersSkipsInvalidEmails(t *testing.T) {
 	}
 	if _, err := s.GetSubscriberByEmail("good@x.com"); err != nil {
 		t.Errorf("valid email missing: %v", err)
+	}
+}
+
+// A legacy-list import is one batch: every valid row lands, duplicates and
+// invalid rows are counted, and each imported subscriber can unsubscribe
+// (has an unsub token). Scale matters — the import runs as a single
+// transaction, not one implicit commit per row.
+func TestImportSubscribersBulk(t *testing.T) {
+	s := newTestStore(t)
+	var emails []string
+	for i := 0; i < 300; i++ {
+		emails = append(emails, "user"+string(rune('a'+i%26))+strconv.Itoa(i)+"@x.com")
+	}
+	emails = append(emails, "user0@example.com") // dup within batch? no — distinct; add real dups below
+	emails = append(emails, emails[0], emails[1], "not-an-email", "")
+
+	imported, skipped, invalid, err := s.ImportSubscribers(emails)
+	if err != nil {
+		t.Fatalf("ImportSubscribers: %v", err)
+	}
+	if imported != 301 || skipped != 2 || invalid != 2 {
+		t.Errorf("imported=%d skipped=%d invalid=%d, want 301/2/2", imported, skipped, invalid)
+	}
+	subs, err := s.ListSubscribers("active", "", 0, 400)
+	if err != nil {
+		t.Fatalf("ListSubscribers: %v", err)
+	}
+	if len(subs) != 301 {
+		t.Errorf("active rows = %d, want 301", len(subs))
+	}
+	for _, sub := range subs {
+		if sub.UnsubToken == "" {
+			t.Fatalf("%s: imported subscriber without unsub token", sub.Email)
+		}
+		if sub.ConfirmedAt == 0 {
+			t.Fatalf("%s: imported subscriber without confirmed_at", sub.Email)
+		}
 	}
 }

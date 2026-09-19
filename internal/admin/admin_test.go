@@ -550,3 +550,92 @@ func TestEmptyAdminTokenDeniesLogin(t *testing.T) {
 		t.Error("empty admin token must refuse login")
 	}
 }
+
+// SVG matches the image/* whitelist but is a stored-XSS carrier (scripts run
+// when the file is opened on the media origin); it must be rejected by name.
+func TestMediaUploadRejectsSVG(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script></svg>`)
+	for _, mime := range []string{"image/svg+xml", "image/svg"} {
+		b, ct := makeMultipart(t, "file", "icon.svg", mime, svg)
+		req := authed(http.MethodPost, "/admin/media", b, session)
+		req.Header.Set("Content-Type", ct)
+		rec := httptest.NewRecorder()
+		fx.handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("svg upload (%s): %d, want 400", mime, rec.Code)
+		}
+	}
+}
+
+// RFC 5322 atext lets a local part start with =, +, - or @ (=HYPERLINK@x.com
+// is a legal address), so exported cells must be neutralized before a
+// spreadsheet app can interpret them as formulas.
+func TestExportNeutralizesFormulaCells(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+
+	imported, _, _, err := fx.store.ImportSubscribers([]string{
+		"=HYPERLINK@x.com", "+cmd@x.com", "-1@x.com", "plain@x.com",
+	})
+	if err != nil || imported != 4 {
+		t.Fatalf("import: imported=%d err=%v", imported, err)
+	}
+
+	rec := httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, authed(http.MethodGet, "/admin/subscribers/export", nil, session))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export: %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, line := range strings.Split(body, "\n") {
+		switch {
+		case line == "":
+		case strings.HasPrefix(line, "email,"):
+		case strings.HasPrefix(line, "plain@x.com,"):
+			// plain cells round-trip untouched
+		default:
+			for _, raw := range []string{"=hyperlink@x.com", "+cmd@x.com", "-1@x.com"} {
+				if strings.HasPrefix(line, raw) {
+					t.Errorf("export leaks formula-capable cell %q", raw)
+				}
+			}
+		}
+	}
+	// Emails are stored lowercased; neutralized cells carry the leading quote.
+	if !strings.Contains(body, "'=hyperlink@x.com") {
+		t.Error("dangerous cell must be prefixed with a single quote")
+	}
+	if !strings.Contains(body, "'+cmd@x.com") || !strings.Contains(body, "'-1@x.com") {
+		t.Error("all dangerous prefixes must be neutralized")
+	}
+	if !strings.Contains(body, "\nplain@x.com,") {
+		t.Error("plain cells must round-trip untouched")
+	}
+}
+
+// Logout clears the session cookie so a shared browser doesn't stay signed in.
+func TestAdminLogout(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+
+	rec := httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, authed(http.MethodPost, "/admin/logout", nil, session))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("logout: %d, want 303", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/admin/login" {
+		t.Errorf("redirect = %q, want /admin/login", loc)
+	}
+	var cleared bool
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "core_session" && c.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Error("logout must expire the session cookie")
+	}
+}

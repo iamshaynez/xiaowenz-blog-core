@@ -125,7 +125,8 @@ func (s *Sender) sendOne(n *store.Newsletter, sub store.Subscriber) error {
 		return fmt.Errorf("render: %w", err)
 	}
 	return s.mailer.Send(sub.Email, n.Subject, html, text, map[string]string{
-		"List-Unsubscribe": "<" + unsubURL + ">",
+		"List-Unsubscribe":      "<" + unsubURL + ">",
+		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 	})
 }
 
