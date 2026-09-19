@@ -1,0 +1,29 @@
+{{template "head" .}}
+{{template "nav"}}
+<main>
+  <h1>媒体库</h1>
+  <div class="card">
+    {{if .R2}}
+    <form method="POST" action="/admin/media" enctype="multipart/form-data">
+      <label>上传（≤100MB；image/*、audio/mpeg、audio/mp4）</label>
+      <input type="file" name="file" required>
+      <div style="margin-top:8px;"><button type="submit">上传</button></div>
+    </form>
+    {{else}}
+    <p style="color:#b45309;">R2 未配置：上传功能禁用（设置 CORE_R2_* 后启用）。</p>
+    {{end}}
+  </div>
+  <table>
+    <tr><th>Key</th><th>类型</th><th>大小</th><th>上传时间</th><th>URL</th></tr>
+    {{range .Media}}
+    <tr>
+      <td>{{.Key}}</td>
+      <td>{{.ContentType}}</td>
+      <td>{{fmtBytes .Bytes}}</td>
+      <td>{{rfc3339 .CreatedAt}}</td>
+      <td><a href="{{.URL}}" target="_blank" rel="noopener">链接</a></td>
+    </tr>
+    {{else}}<tr><td colspan="5" style="color:#888;">暂无媒体</td></tr>{{end}}
+  </table>
+</main>
+</body></html>

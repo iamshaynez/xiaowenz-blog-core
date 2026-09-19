@@ -1,0 +1,15 @@
+{{template "head" .}}
+{{template "nav"}}
+<main>
+  <h1>新建 Newsletter</h1>
+  <div class="card">
+    <form method="POST" action="/admin/newsletters">
+      <label for="subject">主题</label>
+      <input type="text" name="subject" id="subject" required>
+      <label for="markdown">正文（Markdown）</label>
+      <textarea name="markdown" id="markdown" required></textarea>
+      <div style="margin-top:16px;"><button type="submit">保存草稿</button></div>
+    </form>
+  </div>
+</main>
+</body></html>

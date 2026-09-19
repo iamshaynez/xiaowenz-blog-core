@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>三杯过后</title></head>
+<body style="font-family:system-ui,sans-serif;margin:0;padding:0;background:#f7f7f7;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;padding:32px;color:#222;">
+    <header style="border-bottom:2px solid #222;padding-bottom:12px;margin-bottom:24px;">
+      <strong style="font-size:20px;">三杯过后</strong>
+    </header>
+    <main>{{.BodyHTML}}</main>
+    <footer style="border-top:1px solid #ddd;margin-top:32px;padding-top:16px;color:#888;font-size:12px;">
+      <p>你收到本邮件是因为订阅了「三杯过后」。<br>
+        <a href="{{.UnsubURL}}" style="color:#888;">退订本通讯</a></p>
+      <p>{{.MailingAddress}}</p>
+    </footer>
+  </div>
+</body>
+</html>

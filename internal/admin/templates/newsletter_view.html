@@ -1,0 +1,18 @@
+{{template "head" .}}
+{{template "nav"}}
+<main>
+  <h1>{{.N.Subject}} <span class="badge {{.N.Status}}">{{.N.Status}}</span></h1>
+  <div class="card">
+    <p>发送：<strong>{{.N.SentCount}}</strong> 成功 / <strong>{{.N.FailedCount}}</strong> 失败 ·
+       发送时间：{{rfc3339 .N.SentAt}}</p>
+    {{if eq .N.Status "draft"}}
+    <form method="POST" action="/admin/newsletters/{{.N.ID}}/send"
+        onsubmit="return confirm('确认群发？将发送给全部 active 订阅者。')">
+      <button type="submit">开始群发</button>
+    </form>
+    {{end}}
+  </div>
+  <h2 style="font-size:16px;">HTML 预览</h2>
+  <div class="preview">{{.HTML}}</div>
+</main>
+</body></html>

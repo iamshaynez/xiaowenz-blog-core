@@ -1,0 +1,53 @@
+{{define "head"}}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · 三杯过后 管理台</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #f6f7f9; color: #1c1e21; }
+  nav { background: #1c1e21; color: #fff; padding: 0 20px; display: flex; gap: 18px; align-items: center; height: 48px; }
+  nav a { color: #cfd2d6; text-decoration: none; font-size: 14px; }
+  nav a:hover { color: #fff; }
+  nav .brand { font-weight: 700; color: #fff; margin-right: 8px; }
+  main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 22px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+  th { background: #fafbfc; font-weight: 600; }
+  .card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,.06); margin-bottom: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .stat .num { font-size: 28px; font-weight: 700; }
+  .stat .label { color: #65676b; font-size: 13px; margin-top: 4px; }
+  input[type=text], input[type=password], input[type=file], textarea, select {
+    width: 100%; padding: 8px 10px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 14px; font-family: inherit; }
+  textarea { min-height: 320px; font-family: ui-monospace, monospace; }
+  label { display: block; margin: 12px 0 4px; font-size: 13px; color: #444; }
+  button, .btn { background: #1a73e8; color: #fff; border: 0; border-radius: 6px; padding: 8px 16px;
+    font-size: 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn-danger { background: #d93025; }
+  .btn-muted { background: #6b7280; }
+  form.inline { display: inline; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #e4e6eb; }
+  .badge.pending { background: #fef3c7; } .badge.active, .badge.approved, .badge.sent { background: #d1fae5; }
+  .badge.rejected, .badge.failed { background: #fee2e2; } .badge.draft { background: #e0e7ff; }
+  .filters { display: flex; gap: 8px; margin-bottom: 16px; align-items: end; }
+  .filters label { margin: 0 0 4px; }
+  .preview { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+</style>
+</head>
+<body>{{end}}
+
+{{define "nav"}}
+<nav>
+  <span class="brand">三杯过后</span>
+  <a href="/admin">仪表盘</a>
+  <a href="/admin/subscribers">订阅</a>
+  <a href="/admin/comments">评论</a>
+  <a href="/admin/newsletters">Newsletter</a>
+  <a href="/admin/media">媒体</a>
+  <a href="/admin/stats/html">统计</a>
+</nav>{{end}}

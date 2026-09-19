@@ -1,0 +1,35 @@
+{{template "head" .}}
+{{template "nav"}}
+<main>
+  <h1>评论审核</h1>
+  <div class="card">
+    <form class="filters" method="GET" action="/admin/comments">
+      <div><label>状态</label>
+        <select name="status" onchange="this.form.submit()">
+          <option value="pending" {{if eq .Status "pending"}}selected{{end}}>待审</option>
+          <option value="approved" {{if eq .Status "approved"}}selected{{end}}>已通过</option>
+          <option value="rejected" {{if eq .Status "rejected"}}selected{{end}}>已拒绝</option>
+          <option value="" {{if eq .Status ""}}selected{{end}}>全部</option>
+        </select></div>
+    </form>
+  </div>
+  <table>
+    <tr><th>文章</th><th>作者</th><th>内容</th><th>时间</th><th>状态</th><th>操作</th></tr>
+    {{range .Comments}}
+    <tr>
+      <td>{{.PostSlug}}</td>
+      <td>{{.AuthorName}}</td>
+      <td style="max-width:360px;">{{.Content}}</td>
+      <td>{{rfc3339 .CreatedAt}}</td>
+      <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+      <td>
+        <form class="inline" method="POST" action="/admin/comments/{{.ID}}/approve">
+          <button type="submit">通过</button></form>
+        <form class="inline" method="POST" action="/admin/comments/{{.ID}}/reject">
+          <button class="btn-danger" type="submit">拒绝</button></form>
+      </td>
+    </tr>
+    {{else}}<tr><td colspan="6" style="color:#888;">没有{{.Status}}状态的评论</td></tr>{{end}}
+  </table>
+</main>
+</body></html>

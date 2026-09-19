@@ -1,0 +1,16 @@
+.git
+.github
+.video_agent
+out
+docs
+*.md
+!README.md
+.env
+.env.local
+/tmp
+*.db
+*.db-wal
+*.db-shm
+Dockerfile
+.dockerignore
+Makefile
