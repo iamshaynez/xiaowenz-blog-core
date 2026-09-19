@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xiaowenz/xiaowen-core/internal/config"
-	"github.com/xiaowenz/xiaowen-core/internal/mailer"
-	"github.com/xiaowenz/xiaowen-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
 )
 
 // Sender fans a draft out to active subscribers, one goroutine per send run.

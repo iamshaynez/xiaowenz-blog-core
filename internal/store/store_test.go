@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xiaowenz/xiaowen-core/internal/db"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/db"
 )
 
 func newTestStore(t *testing.T) *Store {

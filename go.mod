@@ -1,4 +1,4 @@
-module github.com/xiaowenz/xiaowen-core
+module github.com/iamshaynez/xiaowenz-blog-core
 
 go 1.26.5
 

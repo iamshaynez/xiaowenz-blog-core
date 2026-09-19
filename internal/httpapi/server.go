@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xiaowenz/xiaowen-core/internal/config"
-	"github.com/xiaowenz/xiaowen-core/internal/mailer"
-	"github.com/xiaowenz/xiaowen-core/internal/ratelimit"
-	"github.com/xiaowenz/xiaowen-core/internal/store"
-	"github.com/xiaowenz/xiaowen-core/internal/turnstile"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/ratelimit"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/turnstile"
 )
 
 // Deps wires the public API server.

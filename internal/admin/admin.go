@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xiaowenz/xiaowen-core/internal/config"
-	"github.com/xiaowenz/xiaowen-core/internal/newsletter"
-	"github.com/xiaowenz/xiaowen-core/internal/ratelimit"
-	"github.com/xiaowenz/xiaowen-core/internal/s3store"
-	"github.com/xiaowenz/xiaowen-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/newsletter"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/ratelimit"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/s3store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
 )
 
 // Deps wires the admin console.

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xiaowenz/xiaowen-core/internal/mailer"
-	"github.com/xiaowenz/xiaowen-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
 )
 
 // handleSubscribe implements SPEC §3.1: double opt-in with idempotent

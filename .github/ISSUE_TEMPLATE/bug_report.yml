@@ -1,0 +1,26 @@
+name: Bug report
+description: Something is broken
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Version/commit, deployment (Docker/Zeabur/VPS), relevant redacted config (NEVER paste secrets).
+      placeholder: "commit: \ndeployment: \nCORE_ENV: prod"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output, with secrets removed.
+      render: text

@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xiaowenz/xiaowen-core/internal/config"
-	"github.com/xiaowenz/xiaowen-core/internal/db"
-	"github.com/xiaowenz/xiaowen-core/internal/mailer"
-	"github.com/xiaowenz/xiaowen-core/internal/ratelimit"
-	"github.com/xiaowenz/xiaowen-core/internal/store"
-	"github.com/xiaowenz/xiaowen-core/internal/turnstile"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/db"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/ratelimit"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/turnstile"
 )
 
 // newTestServer wires a Server against a real temp SQLite db, a fake mailer

@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/xiaowenz/xiaowen-core/internal/mailer"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
 )
 
 // handleCreateComment validates and queues a comment for moderation, then

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xiaowenz/xiaowen-core/internal/s3store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/s3store"
 )
 
 const (
