@@ -108,6 +108,8 @@ The admin console at `/admin` (server-rendered, no JS framework) covers: dashboa
 
 Any container host works. On [Zeabur](https://zeabur.com): import the repo (Dockerfile auto-detected), **mount a persistent volume at `/data`**, set the env vars with `CORE_ENV=prod`, bind your domain. See the [deployment notes](README.zh-CN.md#部署zeabur) for the full checklist.
 
+**Hooking up a Hugo site** (config params, frontend JS contract, podcast redirect, acceptance checklist): [docs/HUGO.md](docs/HUGO.md) (中文).
+
 ## Development
 
 ```sh

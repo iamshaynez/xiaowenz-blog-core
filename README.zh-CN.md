@@ -107,6 +107,7 @@ curl localhost:8080/healthz    # {"db":true,"ok":true}
 1. **挂卷**：服务挂载持久卷到 `/data`（SQLite 文件 `core.db` 所在，容器重建不丢数据）。
 2. **环境变量**：按上表设置；`CORE_ENV=prod`（必填项缺失会拒绝启动）、`CORE_ADMIN_TOKEN`、SMTP、R2、`CORE_TURNSTILE_SECRET`、`CORE_BASE_URL=https://core.<你的域名>`、`CORE_SITE_URL=https://<站点域名>`、`CORE_MAILING_ADDRESS`。
 3. **域名**：绑定 `core.<你的域名>` 到服务 8080 端口；静态站把 API base 指向它。
+4. **对接 Hugo 站**：配置项、前端 JS 契约、播客 302 计数与验收清单见 [docs/HUGO.md](docs/HUGO.md)。
 4. Dockerfile 即交付物：多阶段构建（`golang:1.26-alpine` → `alpine`）、非 root 运行、`VOLUME /data`、`EXPOSE 8080`、`HEALTHCHECK /healthz`。CI 会执行 `docker build` 兜底。
 5. 备份：进程内每 24h 自动快照到 R2 `backups/`，保留 30 天（R2 未配置则跳过）。
 
