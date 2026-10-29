@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -12,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/backup"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/db"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/newsletter"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/s3store"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/sysconfig"
 )
 
 type adminFixture struct {
@@ -25,9 +28,13 @@ type adminFixture struct {
 	raw     *Handler // 需要注入内部字段（如 importHostSuffix）的测试用
 	store   *store.Store
 	s3      *s3store.Fake
-	mailer  *mailer.Fake
-	sender  *newsletter.Sender
-	cfg     *config.Config
+	db      *sql.DB
+	backer  *backup.Backer
+	// mediaClient mirrors main's wiring (settings first, env fallback).
+	mediaClient func() s3store.Client
+	mailer      *mailer.Fake
+	sender      *newsletter.Sender
+	cfg         *config.Config
 }
 
 func newAdminFixture(t *testing.T) *adminFixture {
@@ -47,16 +54,38 @@ func newAdminFixture(t *testing.T) *adminFixture {
 		SendInterval:   time.Millisecond,
 	}
 	s3 := s3store.NewFake("https://media.test")
+	// Env-side R2 values, like a deployment configured by environment
+	// variables before anything is set in the console.
+	cfg.R2Endpoint = "https://env.r2.test"
+	cfg.R2KeyID = "env-kid"
+	cfg.R2Secret = "env-sec"
+	cfg.R2Bucket = "env-blog"
+	cfg.R2PublicBase = "https://media.test"
 	fm := &mailer.Fake{}
 	sender := newsletter.NewSender(st, fm, cfg, slog.New(slog.DiscardHandler))
+	backer := backup.New(d, slog.New(slog.DiscardHandler))
+	backer.GetCron = func() string {
+		v, _ := st.GetSetting(backup.SettingKey)
+		return v
+	}
+	// Mirrors main's wiring: settings-backed clients; tests return the fake
+	// instead of a real one. Media falls back to these env-like values so
+	// pre-existing media tests keep working without seeding the console.
+	envMedia := sysconfig.MediaR2{
+		Endpoint: cfg.R2Endpoint, KeyID: cfg.R2KeyID, Secret: cfg.R2Secret,
+		Bucket: cfg.R2Bucket, PublicBase: cfg.R2PublicBase,
+	}
+	mediaClient := sysconfig.MediaClientFactory(st, envMedia, func(sysconfig.MediaR2) s3store.Client { return s3 })
+	backer.Client = sysconfig.BackupClientFactory(st, func(sysconfig.BackupR2) s3store.Client { return s3 })
 	h := NewHandler(Deps{
-		Store:  st,
-		Config: cfg,
-		S3:     s3,
-		Sender: sender,
-		Logger: slog.New(slog.DiscardHandler),
+		Store:       st,
+		Config:      cfg,
+		MediaClient: mediaClient,
+		Sender:      sender,
+		Backups:     backer,
+		Logger:      slog.New(slog.DiscardHandler),
 	})
-	return &adminFixture{handler: h.Routes(), raw: h, store: st, s3: s3, mailer: fm, sender: sender, cfg: cfg}
+	return &adminFixture{handler: h.Routes(), raw: h, store: st, s3: s3, db: d, backer: backer, mediaClient: mediaClient, mailer: fm, sender: sender, cfg: cfg}
 }
 
 // login performs the admin login and returns the session cookie.
@@ -483,11 +512,11 @@ func TestMediaUploadConflictGetsSuffix(t *testing.T) {
 func TestMediaUploadWithoutR2Degrades(t *testing.T) {
 	fx := newAdminFixture(t)
 	fx2handler := NewHandler(Deps{
-		Store:  fx.store,
-		Config: fx.cfg,
-		S3:     nil, // R2 unconfigured
-		Sender: fx.sender,
-		Logger: slog.New(slog.DiscardHandler),
+		Store:       fx.store,
+		Config:      fx.cfg,
+		MediaClient: nil, // R2 unconfigured
+		Sender:      fx.sender,
+		Logger:      slog.New(slog.DiscardHandler),
 	}).Routes()
 	session := login(t, fx2handler)
 	req := func() *http.Request {
@@ -541,7 +570,7 @@ func TestAdminStats(t *testing.T) {
 func TestEmptyAdminTokenDeniesLogin(t *testing.T) {
 	fx := newAdminFixture(t)
 	fx.cfg.AdminToken = ""
-	h := NewHandler(Deps{Store: fx.store, Config: fx.cfg, S3: fx.s3, Sender: fx.sender,
+	h := NewHandler(Deps{Store: fx.store, Config: fx.cfg, MediaClient: fx.mediaClient, Sender: fx.sender,
 		Logger: slog.New(slog.DiscardHandler)}).Routes()
 	req := httptest.NewRequest(http.MethodPost, "/admin/login", strings.NewReader("token="))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

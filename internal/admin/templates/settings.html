@@ -1,0 +1,57 @@
+{{template "head" .}}
+{{template "nav"}}
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">SETTINGS</span>
+    <h1>系统参数</h1>
+    <div class="actions"><a class="btn ghost" href="/admin">← 概览</a></div>
+  </div>
+
+  {{if .FlashOK}}<div class="card"><div class="body" style="color:var(--ok,green);font-size:13px;">✓ {{.FlashOK}}</div></div>{{end}}
+  {{if .FlashErr}}<div class="card"><div class="body" style="color:var(--bad,crimson);font-size:13px;">✗ {{.FlashErr}}{{if .FlashDetail}} — <span class="mono">{{.FlashDetail}}</span>{{end}}</div></div>{{end}}
+
+  <div class="card">
+    <header><span class="t">媒体 R2（公开桶 · 上传/下载）</span>
+      {{if .MediaUp}}<span class="badge ok">生效中</span>{{else}}<span class="badge bad">未配置</span>{{end}}
+    </header>
+    <div class="body">
+      <p class="hint" style="margin-top:0;">解析规则：<strong>数据库优先，逐字段回退环境变量</strong>（CORE_R2_*）。{{if .EnvAny}}当前进程带有环境变量兜底。{{end}}每字段的生效来源见右侧徽标；后台填写的字段立即覆盖环境变量，无需重启。</p>
+      <form method="POST" action="/admin/settings/media" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;align-items:end;">
+        <label class="field" style="margin:0;"><span class="fl">Endpoint{{sourceBadge .MediaDB.Endpoint .MediaEnv.Endpoint}}</span>
+        <input type="url" name="endpoint" value="{{.MediaDB.Endpoint}}" placeholder="{{if .MediaDB.Endpoint}}{{.MediaDB.Endpoint}}{{else if .MediaEnv.Endpoint}}{{.MediaEnv.Endpoint}}{{else}}https://&lt;account&gt;.r2.cloudflarestorage.com{{end}}" class="mono"></label>
+        <label class="field" style="margin:0;"><span class="fl">Access Key ID{{sourceBadge .MediaDB.KeyID .MediaEnv.KeyID}}</span>
+        <input type="text" name="key_id" value="{{.MediaDB.KeyID}}" class="mono" autocomplete="off"></label>
+        <label class="field" style="margin:0;"><span class="fl">Secret Access Key{{if .MediaSecretSet}}（已保存，不回显）{{end}}</span>
+        <input type="password" name="secret" placeholder="{{if .MediaDB.Secret}}留空保持数据库值{{else if .MediaEnv.Secret}}留空沿用环境变量{{else}}Secret Access Key{{end}}" autocomplete="new-password"></label>
+        <label class="field" style="margin:0;"><span class="fl">公开桶名{{sourceBadge .MediaDB.Bucket .MediaEnv.Bucket}}</span>
+        <input type="text" name="bucket" value="{{.MediaDB.Bucket}}" placeholder="{{if .MediaDB.Bucket}}{{.MediaDB.Bucket}}{{else if .MediaEnv.Bucket}}{{.MediaEnv.Bucket}}{{else}}blog{{end}}" class="mono"></label>
+        <label class="field" style="margin:0;"><span class="fl">公开访问基址{{sourceBadge .MediaDB.PublicBase .MediaEnv.PublicBase}}</span>
+        <input type="url" name="public_base" value="{{.MediaDB.PublicBase}}" placeholder="{{if .MediaEnv.PublicBase}}{{.MediaEnv.PublicBase}}{{else}}https://media.example.com{{end}}" class="mono"></label>
+        <button class="btn primary" type="submit">保存媒体配置</button>
+      </form>
+      <p class="hint" style="margin-top:10px;">公开基址在上传时烘焙进媒体 URL，修改只影响之后的上传；已入库 URL 不变。</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">备份 R2（私有桶 · 数据库快照）</span>
+      {{if .BackupUp}}<span class="badge ok">生效中</span>{{else if .BackupSecretSet}}<span class="badge pending">配置不完整</span>{{else}}<span class="badge bad">未配置</span>{{end}}
+    </header>
+    <div class="body">
+      <p class="hint" style="margin-top:0;">仅认数据库配置（无环境变量回退）。备份桶必须<strong>私有</strong>：不绑公网域名、不开放公开访问——凭据存于本服务数据库、随备份一起入桶，桶泄露即凭据泄露；建议使用仅授权该桶的 R2 API Token。计划与手动操作在「备份」页。</p>
+      <form method="POST" action="/admin/settings/backup" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;align-items:end;">
+        <label class="field" style="margin:0;"><span class="fl">Endpoint{{sourceBadge .Backup.Endpoint ""}}</span>
+        <input type="url" name="endpoint" value="{{.Backup.Endpoint}}" placeholder="https://&lt;account&gt;.r2.cloudflarestorage.com" class="mono"></label>
+        <label class="field" style="margin:0;"><span class="fl">Access Key ID{{sourceBadge .Backup.KeyID ""}}</span>
+        <input type="text" name="key_id" value="{{.Backup.KeyID}}" class="mono" autocomplete="off"></label>
+        <label class="field" style="margin:0;"><span class="fl">Secret Access Key{{if .BackupSecretSet}}（已保存，不回显）{{end}}</span>
+        <input type="password" name="secret" placeholder="{{if .Backup.Secret}}留空保持不变{{else}}Secret Access Key{{end}}" autocomplete="new-password"></label>
+        <label class="field" style="margin:0;"><span class="fl">私有桶名{{sourceBadge .Backup.Bucket ""}}</span>
+        <input type="text" name="bucket" value="{{.Backup.Bucket}}" placeholder="core-backups" class="mono"></label>
+        <button class="btn primary" type="submit">保存备份配置</button>
+      </form>
+      <p class="hint" style="margin-top:10px;"><a class="link" href="/admin/backup">→ 去备份页测试连接 / 手动备份 / 改计划</a></p>
+    </div>
+  </div>
+</main>
+</body></html>

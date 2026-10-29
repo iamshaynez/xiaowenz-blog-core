@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Full-codebase review pass (architecture, quality, bugs). All changes test-first.
 
+### Added (console-managed system parameters + backup scheduling)
+
+- **Dedicated「系统参数」(system settings) admin page** (`internal/sysconfig`):
+  both R2 targets — media (public bucket) and backup (private bucket) — are
+  configured in the console and stored in the settings table. Resolution is
+  settings-first with per-field fallback to `CORE_R2_*` env vars for media
+  (existing deployments keep working; console values override without a
+  restart, clients rebuild per operation). The page shows each field's
+  effective source (database / env / unset); secrets are write-only (blank
+  keeps the stored value, never rendered back); malformed values are
+  rejected. Backup R2 is console-only by design — the env vars point at the
+  public media bucket, which must never receive snapshots.
+- **Cron-scheduled backups to a console-configured private R2 bucket**
+  (`robfig/cron/v3`, zero transitive deps, added for battle-tested 5-field
+  cron parsing). The schedule defaults to `0 4 * * *` and the whole R2 target
+  (endpoint, access key, secret, bucket) is managed in the admin console —
+  stored in the settings table, no environment variables involved; the client
+  is rebuilt per operation so console edits apply without a restart. Backups
+  can be triggered manually; retention is the most recent 7 snapshot pairs
+  (was: fixed 24h ticker, 30-day retention, media bucket). Each snapshot
+  ships with a `.meta.json` config digest (schema version, cron, non-secret
+  service config — secrets are recorded as presence flags only). The stored
+  backup secret is never rendered back (blank field keeps the old value), and
+  since credentials live in the DB they travel with its backups — the console
+  warns that the backup bucket must stay private. The console also gained a
+  backup page (history, next-run, "run now", "test R2 connection"
+  write→list→delete probe); concurrent triggers return a busy message instead
+  of stacking.
+
 ### Security
 
 - **X-Forwarded-For spoofing**: `clientIP` now walks the honored XFF chain

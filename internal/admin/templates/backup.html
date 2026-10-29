@@ -1,0 +1,70 @@
+{{template "head" .}}
+{{template "nav"}}
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">BACKUP</span>
+    <h1>备份</h1>
+    <div class="actions"><a class="btn ghost" href="/admin">← 概览</a></div>
+  </div>
+
+  {{if .FlashOK}}<div class="card"><div class="body" style="color:var(--ok,green);font-size:13px;">✓ {{.FlashOK}}</div></div>{{end}}
+  {{if .FlashErr}}<div class="card"><div class="body" style="color:var(--bad,crimson);font-size:13px;">✗ {{.FlashErr}}{{if .FlashDetail}} — <span class="mono">{{.FlashDetail}}</span>{{end}}</div></div>{{end}}
+
+  <div class="card">
+    <header><span class="t">定时计划</span>
+      {{if .Configured}}<span class="badge ok">R2 已配置</span>{{else}}<span class="badge bad">R2 未配置</span>{{end}}
+    </header>
+    <div class="body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+        <div><div class="fl">当前表达式</div><b class="mono">{{.Cron}}</b></div>
+        <div><div class="fl">下次运行</div><b class="num">{{.NextRun}}</b>{{if .NextRunError}} <span class="badge bad">无法计算</span>{{end}}</div>
+        <div><div class="fl">保留策略</div><b class="num">最近 {{.Keep}} 份</b></div>
+      </div>
+      <form method="POST" action="/admin/backup/schedule" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end;margin-top:14px;">
+        <label class="field" style="margin:0;"><span class="fl">cron 表达式（5 字段）</span>
+        <input type="text" name="cron" value="{{.Cron}}" placeholder="0 4 * * *" class="mono"></label>
+        <button class="btn primary" type="submit">保存计划</button>
+      </form>
+      <p class="hint" style="margin-top:10px;">分 时 日 月 周（UTC），支持 <span class="mono">*/15</span>、<span class="mono">1-5</span>、<span class="mono">@daily</span>；保存后立即生效，无需重启。默认每天 04:00（UTC）。</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">备份目标（R2）</span>
+      {{if .Configured}}<span class="badge ok">已配置</span>{{else}}<span class="badge bad">未配置</span>{{end}}
+    </header>
+    <div class="body">
+      <p class="hint" style="margin:0;">备份 R2 的 endpoint / 密钥 / 桶名在「系统参数」页统一配置（数据库优先，环境变量兜底仅对媒体桶生效）。<a class="link" href="/admin/settings">→ 去系统参数页</a></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">手动操作</span></header>
+    <div class="body">
+      <form method="POST" action="/admin/backup/run" style="display:inline;">
+        <button class="btn primary" type="submit" {{if not .Configured}}disabled{{end}}>立即备份</button>
+      </form>
+      <form method="POST" action="/admin/backup/test" style="display:inline;margin-left:8px;">
+        <button class="btn ghost" type="submit" {{if not .Configured}}disabled{{end}}>测试 R2 连接</button>
+      </form>
+      <p class="hint" style="margin-top:10px;">备份内容：SQLite 全量快照 + 配置摘要，存入后台配置的私有桶；「测试 R2 连接」做一次写入→列举→删除的完整回路。未配置时先去「系统参数」页。</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">备份历史</span></header>
+    <div class="body tight"><div class="tbl-wrap">
+    <table class="tbl">
+      <tr><th>时间</th><th>快照</th><th>配置摘要</th></tr>
+      {{range .Snapshots}}
+      <tr>
+        <td class="num">{{backupWhen .When}}</td>
+        <td><span class="mono" style="font-size:11px;">{{.DBKey}}</span></td>
+        <td>{{if .HasMeta}}<span class="badge ok">✓</span>{{else}}<span class="badge bad">缺失</span>{{end}}</td>
+      </tr>
+      {{else}}<tr><td colspan="3"><div class="empty">{{if .ListError}}历史拉取失败：{{.ListError}}{{else}}还没有备份 —— 点「立即备份」或等定时任务触发{{end}}</div></td></tr>{{end}}
+    </table>
+    </div></div>
+  </div>
+</main>
+</body></html>
