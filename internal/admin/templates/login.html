@@ -1,12 +1,19 @@
 {{template "head" .}}
-<main style="max-width:420px;margin-top:80px;">
-  <div class="card">
-    <h1>管理台登录</h1>
-    <form method="POST" action="/admin/login">
-      <label for="token">管理口令</label>
-      <input type="password" name="token" id="token" autofocus>
-      <div style="margin-top:16px;"><button type="submit">登录</button></div>
-    </form>
+<main style="max-width:400px;margin:0 auto;padding:11vh 18px 0;
+  background-image:linear-gradient(to right, rgb(32 35 31 / 0.032) 1px, transparent 1px),radial-gradient(circle at 30% 0%, rgb(52 79 196 / 0.07), transparent 28rem);
+  background-size:calc(100% / 6) 100%, 100% 100%;min-height:100vh;">
+  <div class="card editorial-enter" style="box-shadow:var(--shadow-editorial);">
+    <div class="body" style="padding:30px 28px;">
+      <div style="text-align:center;margin-bottom:22px;">
+        <div class="kicker" style="justify-content:center;">CORE ADMIN</div>
+        <div class="display" style="font-size:24px;margin-top:8px;">三杯过后</div>
+      </div>
+      <form method="POST" action="/admin/login">
+        <label class="field"><span class="fl">管理口令</span>
+        <input type="password" name="token" id="token" autofocus autocomplete="current-password"></label>
+        <button class="btn primary" type="submit" style="width:100%;">登录</button>
+      </form>
+    </div>
   </div>
 </main>
 </body></html>

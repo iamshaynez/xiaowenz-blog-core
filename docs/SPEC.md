@@ -64,7 +64,9 @@
 ### 3.4 健康检查
 - `GET /healthz` → `{"ok":true,"db":true}`（db ping 失败则 503）。
 
-## 4. 管理台（/admin，服务端渲染 html/template，无前端框架）
+## 4. 管理台
+
+管理台整体采用 editorial 设计语言（纸感底色/宋体标题/胶囊控件），页面骨架见 `internal/admin/templates/_layout.html`；仪表盘含下载量条形图与最近待审评论就地审核，评论/订阅页状态页签带实时计数，Newsletter 发送前展示收件人数并强制确认。（/admin，服务端渲染 html/template，无前端框架）
 
 认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（24h，HttpOnly/Secure/SameSite=Lax）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
 

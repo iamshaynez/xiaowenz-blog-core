@@ -1,43 +1,54 @@
 {{template "head" .}}
 {{template "nav"}}
-<main>
-  <h1>订阅名单（共 {{.Total}}）</h1>
-  {{if .Imported}}<div class="card" style="background:#ecfdf5;">
-    导入完成：成功 {{.Imported}}，跳过重复 {{.Skipped}}，无效 {{.Invalid}}。
-  </div>{{end}}
-  <div class="card">
-    <form class="filters" method="GET" action="/admin/subscribers">
-      <div><label>状态</label>
-        <select name="status">
-          <option value="" {{if eq .Status ""}}selected{{end}}>全部</option>
-          <option value="active" {{if eq .Status "active"}}selected{{end}}>active</option>
-          <option value="pending" {{if eq .Status "pending"}}selected{{end}}>pending</option>
-          <option value="unsubscribed" {{if eq .Status "unsubscribed"}}selected{{end}}>unsubscribed</option>
-        </select></div>
-      <div><label>搜索邮箱</label><input type="text" name="q" value="{{.Q}}"></div>
-      <div><button type="submit">筛选</button>
-        <a class="btn btn-muted" href="/admin/subscribers/export">导出 CSV</a></div>
-    </form>
-    <form method="POST" action="/admin/subscribers/import" enctype="multipart/form-data">
-      <label>导入 CSV（列：email[,confirmed]，导入即激活）</label>
-      <input type="file" name="file" accept=".csv" required>
-      <div style="margin-top:8px;"><button type="submit">导入</button></div>
-    </form>
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">AUDIENCE</span>
+    <h1>订阅名单</h1>
+    <div class="actions">
+      <a class="btn" href="/admin/subscribers/export">导出 CSV</a>
+    </div>
   </div>
-  <table>
-    <tr><th>邮箱</th><th>状态</th><th>订阅时间</th><th>确认时间</th><th></th></tr>
-    {{range .Subs}}
-    <tr>
-      <td>{{.Email}}</td>
-      <td><span class="badge {{.Status}}">{{.Status}}</span></td>
-      <td>{{rfc3339 .CreatedAt}}</td>
-      <td>{{rfc3339 .ConfirmedAt}}</td>
-      <td><form class="inline" method="POST" action="/admin/subscribers/{{.ID}}/delete"
-          onsubmit="return confirm('确认删除？')">
-        <button class="btn-danger" type="submit">删除</button></form></td>
-    </tr>
-    {{else}}<tr><td colspan="5" style="color:#888;">暂无订阅者</td></tr>{{end}}
-  </table>
-  {{if .HasMore}}<p><a class="btn btn-muted" href="/admin/subscribers?page={{printf "%d" (add .Page 1)}}&status={{.Status}}&q={{.Q}}">下一页</a></p>{{end}}
+  {{if .Imported}}<div class="flash">导入完成：成功 {{.Imported}} · 跳过重复 {{.Skipped}} · 无效 {{.Invalid}}</div>{{end}}
+  <div class="chips">
+    <a href="/admin/subscribers" {{if eq .Status ""}}class="on"{{end}}>全部 {{.Total}}</a>
+    <a href="/admin/subscribers?status=active" {{if eq .Status "active"}}class="on"{{end}} data-count-status="active">{{index .Counts "active"}} active</a>
+    <a href="/admin/subscribers?status=pending" {{if eq .Status "pending"}}class="on"{{end}} data-count-status="pending">{{index .Counts "pending"}} pending</a>
+    <a href="/admin/subscribers?status=unsubscribed" {{if eq .Status "unsubscribed"}}class="on"{{end}} data-count-status="unsubscribed">{{index .Counts "unsubscribed"}} 已退订</a>
+  </div>
+
+  <div class="card">
+    <header><span class="t">筛选</span>
+      <form method="GET" action="/admin/subscribers" class="h-actions" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
+        <input type="hidden" name="status" value="{{.Status}}">
+        <div><span class="fl">搜索邮箱</span><input type="text" name="q" value="{{.Q}}" placeholder="user@example.com" style="min-width:220px;"></div>
+        <button class="btn small" type="submit">搜索</button>
+      </form>
+    </header>
+    <div class="body tight"><div class="tbl-wrap">
+    <table class="tbl">
+      <tr><th>邮箱</th><th>状态</th><th>订阅时间</th><th>确认时间</th><th></th></tr>
+      {{range .Subs}}
+      <tr>
+        <td class="mono">{{.Email}}</td>
+        <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+        <td class="dim num">{{rfc3339 .CreatedAt}}</td>
+        <td class="dim num">{{rfc3339 .ConfirmedAt}}</td>
+        <td><form method="POST" action="/admin/subscribers/{{.ID}}/delete" onsubmit="return confirm('确认删除该订阅者？')">
+          <button class="btn small danger" type="submit">删除</button></form></td>
+      </tr>
+      {{else}}<tr><td colspan="5"><div class="empty">暂无订阅者</div></td></tr>{{end}}
+    </table>
+    </div></div>
+    {{if .HasMore}}<div class="body" style="text-align:center;"><a class="btn ghost" href="/admin/subscribers?page={{printf "%d" (add .Page 1)}}&status={{.Status}}&q={{.Q}}">下一页 →</a></div>{{end}}
+  </div>
+
+  <details class="card" style="padding:14px 20px;">
+    <summary style="cursor:pointer;font-size:13px;font-weight:600;">导入 CSV（Typlog 导出名单等）</summary>
+    <form method="POST" action="/admin/subscribers/import" enctype="multipart/form-data" style="margin-top:12px;">
+      <label class="field"><span class="fl">CSV 文件（首列 email，导入即激活、不发验证邮件）</span>
+      <input type="file" name="file" accept=".csv" required></label>
+      <button class="btn" type="submit">导入</button>
+    </form>
+  </details>
 </main>
 </body></html>

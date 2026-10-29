@@ -1,21 +1,32 @@
 {{template "head" .}}
 {{template "nav"}}
-<main>
-  <h1>统计（近 30 天）</h1>
-  <div class="stats">
-    <div class="stat"><div class="num">{{.PV30}}</div><div class="label">PV</div></div>
-    <div class="stat"><div class="num">{{.UV30}}</div><div class="label">UV</div></div>
-    <div class="stat"><div class="num">{{.ActiveSubs}}</div><div class="label">订阅</div></div>
-    <div class="stat"><div class="num">{{.PendingComments}}</div><div class="label">待审评论</div></div>
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">ANALYTICS · 近 30 天</span>
+    <h1>统计</h1>
+    <div class="actions"><a class="btn ghost small" href="/admin/stats">JSON</a></div>
   </div>
-  <div class="card" style="margin-top:16px;">
-    <h2 style="font-size:16px;">剧集下载量</h2>
-    <table>
-      <tr><th>剧集</th><th>下载次数</th></tr>
-      {{range $slug, $n := .Downloads}}<tr><td>{{$slug}}</td><td>{{$n}}</td></tr>{{else}}
-      <tr><td colspan="2" style="color:#888;">暂无下载记录</td></tr>{{end}}
-    </table>
-    <p style="margin-top:12px;"><a href="/admin/stats">JSON 格式</a></p>
+  <div class="stats">
+    <div class="stat"><div class="v">{{.PV30}}</div><div class="l">PV</div></div>
+    <div class="stat"><div class="v">{{.UV30}}</div><div class="l">UV</div></div>
+    <div class="stat"><div class="v">{{.ActiveSubs}}</div><div class="l">订阅</div></div>
+    <div class="stat"><div class="v">{{.PendingComments}}</div><div class="l">待审评论</div></div>
+  </div>
+  <div class="card">
+    <header><span class="t">剧集下载量</span></header>
+    <div class="body">
+      {{if .Downloads}}
+      <div class="bars">
+        {{range .Downloads}}
+        <div class="bar-row" data-slug="{{.Slug}}">
+          <span class="slug" title="{{.Slug}}">{{.Slug}}</span>
+          <span class="track"><span class="fill" style="width:{{.Width}}%"></span></span>
+          <span class="n">{{.Count}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{else}}<div class="empty">暂无下载记录</div>{{end}}
+    </div>
   </div>
 </main>
 </body></html>

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,12 +19,17 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
 	pending, err2 := h.store.CountComments("pending")
 	pv, uv, err3 := h.store.PageviewStats(since)
 	downloads, err4 := h.store.DownloadStats(since)
-	for _, err := range []error{err1, err2, err3, err4} {
+	recent, err5 := h.store.ListComments("pending")
+	for _, err := range []error{err1, err2, err3, err4, err5} {
 		if err != nil {
 			h.log.Error("dashboard query", "err", err)
 			writeErr(w, http.StatusInternalServerError, "query failed")
 			return
 		}
+	}
+	rows := sortedDownloadRows(downloads)
+	if len(recent) > 5 {
+		recent = recent[:5]
 	}
 	h.render(w, "dashboard.html", map[string]any{
 		"Title":           "仪表盘",
@@ -31,7 +37,8 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
 		"PendingComments": pending,
 		"PV30":            pv,
 		"UV30":            uv,
-		"Downloads":       downloads,
+		"Downloads":       rows,
+		"RecentPending":   recent,
 	})
 }
 
@@ -55,11 +62,18 @@ func (h *Handler) subscribersPage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
+	counts := map[string]int{}
+	for _, st := range []string{"active", "pending", "unsubscribed"} {
+		if n, err := h.store.CountSubscribers(st, ""); err == nil {
+			counts[st] = n
+		}
+	}
 	h.render(w, "subscribers.html", map[string]any{
 		"Title": "订阅名单",
 		"Subs":  subs, "Total": total, "Page": page,
 		"Status": status, "Q": search, "HasMore": page*50 < total,
 		"Imported": q.Get("imported"), "Skipped": q.Get("skipped"), "Invalid": q.Get("invalid"),
+		"Counts": counts,
 	})
 }
 
@@ -163,8 +177,14 @@ func (h *Handler) commentsPage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
+	counts := map[string]int{}
+	for _, st := range []string{"pending", "approved", "rejected"} {
+		if n, err := h.store.CountComments(st); err == nil {
+			counts[st] = n
+		}
+	}
 	h.render(w, "comments.html", map[string]any{
-		"Title": "评论审核", "Comments": comments, "Status": status,
+		"Title": "评论审核", "Comments": comments, "Status": status, "Counts": counts,
 	})
 }
 
@@ -226,11 +246,12 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	downloads, err := h.store.DownloadStats(since)
+	downloadsMap, err := h.store.DownloadStats(since)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
+	downloads := sortedDownloadRows(downloadsMap)
 	active, err := h.store.CountSubscribers("active", "")
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
@@ -245,4 +266,34 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		"Title": "统计", "PV30": pv, "UV30": uv,
 		"ActiveSubs": active, "PendingComments": pending, "Downloads": downloads,
 	})
+}
+
+// DownloadRow 是仪表盘条形图的一行：slug、近 30 天次数、条宽百分比（模板不做算术）。
+type DownloadRow struct {
+	Slug  string
+	Count int
+	Width int
+}
+
+// sortedDownloadRows 把下载量 map 变成降序、带条宽百分比的行。
+func sortedDownloadRows(downloads map[string]int) []DownloadRow {
+	rows := make([]DownloadRow, 0, len(downloads))
+	maxN := 0
+	for _, n := range downloads {
+		if n > maxN {
+			maxN = n
+		}
+	}
+	for slug, n := range downloads {
+		w := 100
+		if maxN > 0 {
+			w = n * 100 / maxN
+		}
+		if w < 3 && n > 0 {
+			w = 3
+		}
+		rows = append(rows, DownloadRow{Slug: slug, Count: n, Width: w})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Count > rows[j].Count })
+	return rows
 }

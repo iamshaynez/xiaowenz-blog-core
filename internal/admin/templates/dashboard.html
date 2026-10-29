@@ -1,20 +1,55 @@
 {{template "head" .}}
 {{template "nav"}}
-<main>
-  <h1>仪表盘</h1>
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">OVERVIEW · 近 30 天</span>
+    <h1>仪表盘</h1>
+  </div>
   <div class="stats">
-    <div class="stat"><div class="num">{{.ActiveSubs}}</div><div class="label">订阅（active）</div></div>
-    <div class="stat"><div class="num">{{.PendingComments}}</div><div class="label">待审评论</div></div>
-    <div class="stat"><div class="num">{{.PV30}}</div><div class="label">近 30 天 PV</div></div>
-    <div class="stat"><div class="num">{{.UV30}}</div><div class="label">近 30 天 UV</div></div>
+    <div class="stat"><div class="v">{{.ActiveSubs}}</div><div class="l">订阅者（active）</div></div>
+    <div class="stat{{if .PendingComments}} alert{{end}}"><div class="v">{{.PendingComments}}</div><div class="l">待审评论</div></div>
+    <div class="stat"><div class="v">{{.PV30}}</div><div class="l">浏览 PV</div></div>
+    <div class="stat"><div class="v">{{.UV30}}</div><div class="l">访客 UV</div></div>
   </div>
-  <div class="card" style="margin-top:16px;">
-    <h2 style="font-size:16px;">各剧集近 30 天下载量</h2>
-    <table>
-      <tr><th>剧集</th><th>下载次数</th></tr>
-      {{range $slug, $n := .Downloads}}<tr><td>{{$slug}}</td><td>{{$n}}</td></tr>{{else}}
-      <tr><td colspan="2" style="color:#888;">暂无下载记录</td></tr>{{end}}
-    </table>
+
+  <div class="card">
+    <header><span class="t">各剧集下载量</span><span class="hint">按次数排序 · 近 30 天</span></header>
+    <div class="body">
+      {{if .Downloads}}
+      <div class="bars">
+        {{$max := 0}}{{range .Downloads}}{{if gt .Count $max}}{{$max = .Count}}{{end}}{{end}}
+        {{range .Downloads}}
+        <div class="bar-row" data-slug="{{.Slug}}">
+          <span class="slug" title="{{.Slug}}">{{.Slug}}</span>
+          <span class="track"><span class="fill" style="width:{{.Width}}%"></span></span>
+          <span class="n">{{.Count}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{else}}<div class="empty">暂无下载记录</div>{{end}}
+    </div>
   </div>
+
+  {{if .RecentPending}}
+  <div class="card">
+    <header>
+      <span class="t">最近待审评论</span>
+      <span class="h-actions"><a class="btn ghost small" href="/admin/comments">全部待审 →</a></span>
+    </header>
+    <div class="body">
+      {{range .RecentPending}}
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);">
+        <span class="badge pending">{{.PostSlug}}</span>
+        <b style="font-size:13px;">{{.AuthorName}}</b>
+        <span class="quote" style="flex:1;min-width:200px;">{{.Content}}</span>
+        <span class="h-actions" style="display:flex;gap:6px;">
+          <form method="POST" action="/admin/comments/{{.ID}}/approve" style="display:inline;"><button class="btn small primary" type="submit">通过</button></form>
+          <form method="POST" action="/admin/comments/{{.ID}}/reject" style="display:inline;"><button class="btn small danger" type="submit">拒绝</button></form>
+        </span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
 </main>
 </body></html>

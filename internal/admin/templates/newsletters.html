@@ -1,21 +1,25 @@
 {{template "head" .}}
 {{template "nav"}}
-<main>
-  <h1>Newsletter</h1>
-  <p><a class="btn" href="/admin/newsletters/new">新建</a></p>
-  <table>
-    <tr><th>主题</th><th>状态</th><th>成功</th><th>失败</th><th>创建</th><th>发送</th><th></th></tr>
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">MAILING</span>
+    <h1>Newsletter</h1>
+    <div class="actions"><a class="btn primary" href="/admin/newsletters/new">＋ 新建</a></div>
+  </div>
+  <div class="card"><div class="body tight"><div class="tbl-wrap">
+  <table class="tbl">
+    <tr><th>主题</th><th>状态</th><th>送达 / 失败</th><th>创建</th><th>发送</th><th></th></tr>
     {{range .List}}
     <tr>
-      <td><a href="/admin/newsletters/{{.ID}}">{{.Subject}}</a></td>
+      <td><a class="link" href="/admin/newsletters/{{.ID}}">{{.Subject}}</a></td>
       <td><span class="badge {{.Status}}">{{.Status}}</span></td>
-      <td>{{.SentCount}}</td>
-      <td>{{.FailedCount}}</td>
-      <td>{{rfc3339 .CreatedAt}}</td>
-      <td>{{rfc3339 .SentAt}}</td>
-      <td><a href="/admin/newsletters/{{.ID}}">预览/发送</a></td>
+      <td class="num">{{if or (eq .Status "sent") (eq .Status "sending")}}{{.SentCount}} / {{.FailedCount}}{{else}}—{{end}}</td>
+      <td class="dim num">{{rfc3339 .CreatedAt}}</td>
+      <td class="dim num">{{rfc3339 .SentAt}}</td>
+      <td><a class="btn small ghost" href="/admin/newsletters/{{.ID}}">{{if eq .Status "draft"}}编辑 / 发送{{else}}查看{{end}}</a></td>
     </tr>
-    {{else}}<tr><td colspan="7" style="color:#888;">暂无 Newsletter</td></tr>{{end}}
+    {{else}}<tr><td colspan="6"><div class="empty">暂无 Newsletter</div></td></tr>{{end}}
   </table>
+  </div></div></div>
 </main>
 </body></html>

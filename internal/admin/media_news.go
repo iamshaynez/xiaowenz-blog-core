@@ -65,8 +65,13 @@ func (h *Handler) newsletterView(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
+	recipients, err := h.store.CountSubscribers("active", "")
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 	h.render(w, "newsletter_view.html", map[string]any{
-		"Title": n.Subject, "N": n, "HTML": template.HTML(n.HTML),
+		"Title": n.Subject, "N": n, "HTML": template.HTML(n.HTML), "Recipients": recipients,
 	})
 }
 

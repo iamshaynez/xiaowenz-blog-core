@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -12,7 +13,8 @@ import (
 var templatesFS embed.FS
 
 var tpl = template.Must(template.New("").Funcs(template.FuncMap{
-	"add": func(a, b int) int { return a + b },
+	"add":     func(a, b int) int { return a + b },
+	"isImage": func(ct string) bool { return strings.HasPrefix(ct, "image/") },
 	"rfc3339": func(unix int64) string {
 		if unix == 0 {
 			return "-"

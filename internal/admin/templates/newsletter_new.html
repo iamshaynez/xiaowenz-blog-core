@@ -1,33 +1,49 @@
 {{template "head" .}}
 {{template "nav"}}
-<main>
-  <h1>新建 Newsletter</h1>
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">COMPOSE</span>
+    <h1>新建 Newsletter</h1>
+    <div class="actions"><a class="btn ghost" href="/admin/newsletters">← 返回列表</a></div>
+  </div>
+
   {{if .Posts}}
   <div class="card">
-    <form method="POST" action="/admin/newsletters/import">
-      <label for="post-url">从最近文章生成草稿（选中即抓取，链接/标题/导语自动填）</label>
-      <select name="url" id="post-url" required>
-        {{range .Posts}}<option value="{{.URL}}">{{if .Date}}{{.Date}} · {{end}}{{.Title}}</option>{{end}}
-      </select>
-      <div style="margin-top:12px;"><button type="submit">生成草稿</button></div>
-    </form>
+    <header><span class="t">① 从最近文章生成</span><span class="hint">选中即抓取，标题 / 导语 / 链接自动填</span></header>
+    <div class="body">
+      <form method="POST" action="/admin/newsletters/import">
+        <label class="field"><span class="fl">博客最近文章（含播客）</span>
+        <select name="url" required style="width:100%;">
+          {{range .Posts}}<option value="{{.URL}}">{{if .Date}}{{.Date}} · {{end}}{{.Title}}</option>{{end}}
+        </select></label>
+        <button class="btn primary" type="submit">生成草稿</button>
+      </form>
+    </div>
   </div>
   {{end}}
+
   <div class="card">
-    <form method="POST" action="/admin/newsletters">
-      <label for="subject">主题</label>
-      <input type="text" name="subject" id="subject" required>
-      <label for="markdown">正文（Markdown）</label>
-      <textarea name="markdown" id="markdown" required></textarea>
-      <div style="margin-top:16px;"><button type="submit">保存草稿</button></div>
-    </form>
+    <header><span class="t">{{if .Posts}}②{{else}}①{{end}} 手动粘贴文章 URL</span></header>
+    <div class="body">
+      <form method="POST" action="/admin/newsletters/import">
+        <label class="field"><span class="fl">文章公网地址</span>
+        <input type="url" name="url" placeholder="https://xiaowenz.com/blog/….html" required></label>
+        <button class="btn" type="submit">抓取生成草稿</button>
+      </form>
+    </div>
   </div>
-  <div class="card" style="margin-top:16px;">
-    <form method="POST" action="/admin/newsletters/import">
-      <label for="import-url">或从博客文章 URL 生成草稿（文章须已公网上线）</label>
-      <input type="url" name="url" id="import-url" placeholder="https://xiaowenz.com/blog/….html" required>
-      <div style="margin-top:12px;"><button type="submit">抓取生成草稿</button></div>
-    </form>
+
+  <div class="card">
+    <header><span class="t">{{if .Posts}}③{{else}}②{{end}} 从空白写起</span></header>
+    <div class="body">
+      <form method="POST" action="/admin/newsletters">
+        <label class="field"><span class="fl">主题</span>
+        <input type="text" name="subject" required></label>
+        <label class="field"><span class="fl">正文（Markdown）</span>
+        <textarea name="markdown" required></textarea></label>
+        <button class="btn primary" type="submit">保存草稿</button>
+      </form>
+    </div>
   </div>
 </main>
 </body></html>

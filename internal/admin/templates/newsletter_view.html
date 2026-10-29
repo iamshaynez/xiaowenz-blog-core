@@ -1,18 +1,38 @@
 {{template "head" .}}
 {{template "nav"}}
-<main>
-  <h1>{{.N.Subject}} <span class="badge {{.N.Status}}">{{.N.Status}}</span></h1>
-  <div class="card">
-    <p>发送：<strong>{{.N.SentCount}}</strong> 成功 / <strong>{{.N.FailedCount}}</strong> 失败 ·
-       发送时间：{{rfc3339 .N.SentAt}}</p>
-    {{if eq .N.Status "draft"}}
-    <form method="POST" action="/admin/newsletters/{{.N.ID}}/send"
-        onsubmit="return confirm('确认群发？将发送给全部 active 订阅者。')">
-      <button type="submit">开始群发</button>
-    </form>
-    {{end}}
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">REVIEW &amp; SEND</span>
+    <h1 style="font-size:22px;">{{.N.Subject}}</h1>
+    <div class="actions">
+      <span class="badge {{.N.Status}}">{{.N.Status}}</span>
+      <a class="btn ghost" href="/admin/newsletters">← 列表</a>
+    </div>
   </div>
-  <h2 style="font-size:16px;">HTML 预览</h2>
-  <div class="preview">{{.HTML}}</div>
+
+  {{if eq .N.Status "draft"}}
+  <div class="card">
+    <header><span class="t">发送</span><span class="hint">邮件一经发出不可撤回</span></header>
+    <div class="body" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
+      <span>将发送给 <b class="num">{{.Recipients}}</b> 位订阅者（active）。</span>
+      <form method="POST" action="/admin/newsletters/{{.N.ID}}/send" class="confirm-send"
+            data-n="{{.Recipients}}"
+            onsubmit="return confirm('确认向 ' + this.dataset.n + ' 位订阅者发送本邮件？\n发送后不可撤回。')">
+        <button class="btn danger" type="submit">发送给 {{.Recipients}} 位订阅者</button>
+      </form>
+    </div>
+  </div>
+  {{else if eq .N.Status "sending"}}
+  <div class="card"><div class="body">后台发送中…… 送达 {{.N.SentCount}} · 失败 {{.N.FailedCount}}</div></div>
+  {{else}}
+  <div class="card"><div class="body">已发送 · 送达 <b class="num">{{.N.SentCount}}</b> · 失败 <b class="num">{{.N.FailedCount}}</b> · 时间 {{rfc3339 .N.SentAt}}</div></div>
+  {{end}}
+
+  <div class="card">
+    <header><span class="t">邮件预览（订阅者视角）</span></header>
+    <div class="body">
+      <div class="mail-preview">{{.HTML}}</div>
+    </div>
+  </div>
 </main>
 </body></html>
