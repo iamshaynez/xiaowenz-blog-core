@@ -9,7 +9,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/core ./cmd/core
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates wget \
+RUN apk add --no-cache ca-certificates tzdata wget \
     && adduser -D -u 10001 core
 COPY --from=build /out/core /usr/local/bin/core
 RUN mkdir -p /data && chown core:core /data

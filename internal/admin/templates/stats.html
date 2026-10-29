@@ -2,18 +2,87 @@
 {{template "nav"}}
 <main class="editorial-enter">
   <div class="page-head">
-    <span class="kicker">ANALYTICS · 近 30 天</span>
+    <span class="kicker">ANALYTICS</span>
     <h1>统计</h1>
-    <div class="actions"><a class="btn ghost small" href="/admin/stats">JSON</a></div>
+    <div class="actions">
+      <div class="chips" style="margin:0;">
+        <a href="/admin/stats/html?days=7" {{if eq .Days 7}}class="on"{{end}} data-days="7">近 7 天</a>
+        <a href="/admin/stats/html?days=30" {{if eq .Days 30}}class="on"{{end}} data-days="30">近 30 天</a>
+        <a href="/admin/stats/html?days=90" {{if eq .Days 90}}class="on"{{end}} data-days="90">近 90 天</a>
+      </div>
+      <a class="btn ghost small" href="/admin/stats">JSON</a>
+    </div>
   </div>
+
   <div class="stats">
-    <div class="stat"><div class="v">{{.PV30}}</div><div class="l">PV</div></div>
-    <div class="stat"><div class="v">{{.UV30}}</div><div class="l">UV</div></div>
+    <div class="stat"><div class="v">{{.PV30}}</div><div class="l">浏览 PV · {{.Days}} 天</div></div>
+    <div class="stat"><div class="v">{{.UV30}}</div><div class="l">访客 UV · {{.Days}} 天</div></div>
     <div class="stat"><div class="v">{{.ActiveSubs}}</div><div class="l">订阅</div></div>
     <div class="stat"><div class="v">{{.PendingComments}}</div><div class="l">待审评论</div></div>
   </div>
+
   <div class="card">
-    <header><span class="t">剧集下载量</span></header>
+    <header>
+      <span class="t">浏览时间线</span>
+      <span class="h-actions">
+        <span class="badge"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--brand);margin-right:5px;"></i>PV</span>
+        <span class="badge"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--ok);margin-right:5px;"></i>UV</span>
+      </span>
+    </header>
+    <div class="body">
+      <div class="timeline">
+        {{range .Timeline}}
+        <div class="tl-col" data-day="{{.Day}}" title="{{.Day}}　PV {{.PV}} · UV {{.UV}}">
+          <div class="tl-bar">
+            <span class="pv" style="height:{{.PVH}}%"></span>
+            <span class="uv" style="height:{{.UVH}}%"></span>
+          </div>
+          {{if .Label}}<span class="tl-label">{{.Label}}</span>{{else}}<span class="tl-label">&nbsp;</span>{{end}}
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header>
+      <span class="t">热门路径 TOP 100</span>
+      <input type="text" id="ip-path-filter" placeholder="检索路径…" style="width:200px;padding:5px 10px;font-size:12px;">
+    </header>
+    <div class="body tight"><div class="tbl-wrap">
+    <table class="tbl" id="tbl-paths">
+      <tr><th>路径</th><th style="width:90px;">PV</th><th style="width:70px;">UV</th><th style="width:34%;">占比</th></tr>
+      {{range .Paths}}
+      <tr class="path-row">
+        <td class="mono">{{.Path}}</td>
+        <td class="num"><b>{{.PV}}</b></td>
+        <td class="num dim">{{.UV}}</td>
+        <td><div class="share-track"><span class="share-fill" style="width:{{.Width}}%"></span><span class="share-n num">{{.Share}}%</span></div></td>
+      </tr>
+      {{else}}<tr><td colspan="4"><div class="empty">该时间窗暂无浏览记录</div></td></tr>{{end}}
+    </table>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">访问来源 TOP 20</span></header>
+    <div class="body tight"><div class="tbl-wrap">
+    <table class="tbl">
+      <tr><th>来源</th><th style="width:90px;">PV</th><th style="width:70px;">UV</th><th style="width:34%;">占比</th></tr>
+      {{range .Referrers}}
+      <tr>
+        <td>{{if .Referrer}}<a class="link mono" href="{{.Referrer}}" target="_blank" rel="noopener">{{.Referrer}}</a>{{else}}<b>{{.Display}}</b>{{end}}</td>
+        <td class="num"><b>{{.PV}}</b></td>
+        <td class="num dim">{{.UV}}</td>
+        <td><div class="share-track"><span class="share-fill ref" style="width:{{.Width}}%"></span><span class="share-n num">{{.Share}}%</span></div></td>
+      </tr>
+      {{else}}<tr><td colspan="4"><div class="empty">该时间窗暂无浏览记录</div></td></tr>{{end}}
+    </table>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">剧集下载量</span><span class="hint">{{.Days}} 天窗口 · 按次数排序</span></header>
     <div class="body">
       {{if .Downloads}}
       <div class="bars">
@@ -28,5 +97,18 @@
       {{else}}<div class="empty">暂无下载记录</div>{{end}}
     </div>
   </div>
+
+  <script>
+  (function () {
+    var q = document.getElementById("ip-path-filter");
+    if (!q) return;
+    q.addEventListener("input", function () {
+      var kw = q.value.trim().toLowerCase();
+      document.querySelectorAll("#tbl-paths .path-row").forEach(function (tr) {
+        tr.hidden = kw !== "" && tr.textContent.toLowerCase().indexOf(kw) < 0;
+      });
+    });
+  })();
+  </script>
 </main>
 </body></html>

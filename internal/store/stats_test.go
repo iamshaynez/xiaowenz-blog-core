@@ -141,3 +141,80 @@ func TestHashIPDailyRotation(t *testing.T) {
 		t.Errorf("hash len = %d, want 64", len(h1))
 	}
 }
+
+// ── 富统计：时间线 / 路径 / 来源（admin 统计页的数据地基）────────────
+
+func TestPageviewTimeseries(t *testing.T) {
+	s := newTestStore(t)
+	base := time.Date(2026, 10, 27, 12, 0, 0, 0, time.Local)
+	// D1：/a 两个访客 + /b 一个访客
+	s.now = func() time.Time { return base }
+	_ = s.RecordPageview("/a", "https://g.com", "ip1", "ua")
+	_ = s.RecordPageview("/a", "", "ip2", "ua")
+	_ = s.RecordPageview("/b", "", "ip1", "ua")
+	// D2：/a 一个回访访客
+	s.now = func() time.Time { return base.AddDate(0, 0, 1) }
+	_ = s.RecordPageview("/a", "https://t.co", "ip1", "ua")
+
+	ts, err := s.PageviewTimeseries(0)
+	if err != nil {
+		t.Fatalf("PageviewTimeseries: %v", err)
+	}
+	if len(ts) != 2 {
+		t.Fatalf("days = %d, want 2: %+v", len(ts), ts)
+	}
+	d1, d2 := ts[0], ts[1]
+	if d1.Day != base.Format("2006-01-02") || d1.PV != 3 || d1.UV != 2 {
+		t.Errorf("day1 = %+v, want {2026-10-27 3 2}", d1)
+	}
+	if d2.PV != 1 || d2.UV != 1 {
+		t.Errorf("day2 = %+v, want pv=1 uv=1（同日 ip 去重、跨日独立计）", d2)
+	}
+}
+
+func TestPathStatsOrdered(t *testing.T) {
+	s := newTestStore(t)
+	for _, x := range []struct{ path, ip string }{
+		{"/blog/hot", "ip1"}, {"/blog/hot", "ip2"}, {"/blog/hot", "ip1"},
+		{"/blog/cold", "ip1"},
+	} {
+		if err := s.RecordPageview(x.path, "", x.ip, "ua"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths, err := s.PathStats(0, 10)
+	if err != nil {
+		t.Fatalf("PathStats: %v", err)
+	}
+	if len(paths) != 2 || paths[0].Path != "/blog/hot" || paths[0].PV != 3 || paths[0].UV != 2 {
+		t.Fatalf("paths = %+v, want hot(3/2) first", paths)
+	}
+	if paths[1].Path != "/blog/cold" || paths[1].PV != 1 {
+		t.Errorf("paths[1] = %+v", paths[1])
+	}
+}
+
+func TestReferrerStatsGrouped(t *testing.T) {
+	s := newTestStore(t)
+	for _, x := range []struct{ ref, ip string }{
+		{"https://google.com", "ip1"}, {"https://google.com", "ip2"},
+		{"", "ip1"}, {"", "ip3"}, {"", "ip1"},
+	} {
+		if err := s.RecordPageview("/p", x.ref, x.ip, "ua"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refs, err := s.ReferrerStats(0, 10)
+	if err != nil {
+		t.Fatalf("ReferrerStats: %v", err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("refs = %+v, want 2 groups", refs)
+	}
+	if refs[0].Referrer != "" || refs[0].PV != 3 || refs[0].UV != 2 {
+		t.Errorf("直接访问应为首位: %+v", refs[0])
+	}
+	if refs[1].Referrer != "https://google.com" || refs[1].PV != 2 {
+		t.Errorf("refs[1] = %+v", refs[1])
+	}
+}

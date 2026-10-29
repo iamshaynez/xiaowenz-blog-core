@@ -737,3 +737,88 @@ func scanMedia(r rowScanner) (*Media, error) {
 }
 
 func scanMediaRows(r rowScanner) (*Media, error) { return scanMedia(r) }
+
+// ── 富统计聚合（admin 统计页）：时间线 / 路径 / 来源 ──────────────────
+// 日界用进程本地时区（部署侧以 TZ 环境变量对齐受众时区）。
+
+// DayStat 是时间线上的一天：PV、UV（同日 ip_hash 去重）。
+type DayStat struct {
+	Day string // YYYY-MM-DD（本地时区）
+	PV  int
+	UV  int
+}
+
+// PageviewTimeseries returns per-day PV/UV since the unix timestamp.
+// 零流量的天不出现（连续序列由展示层补零）。
+func (s *Store) PageviewTimeseries(since int64) ([]DayStat, error) {
+	rows, err := s.db.Query(
+		`SELECT date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
+		 FROM pageviews WHERE created_at>=? GROUP BY 1 ORDER BY 1`, since)
+	if err != nil {
+		return nil, fmt.Errorf("pageview timeseries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []DayStat
+	for rows.Next() {
+		var d DayStat
+		if err := rows.Scan(&d.Day, &d.PV, &d.UV); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// PathStat 是单条路径的 PV/UV。
+type PathStat struct {
+	Path string
+	PV   int
+	UV   int
+}
+
+// PathStats returns top paths by PV since the unix timestamp.
+func (s *Store) PathStats(since int64, limit int) ([]PathStat, error) {
+	rows, err := s.db.Query(
+		`SELECT path, COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews
+		 WHERE created_at>=? GROUP BY path ORDER BY 2 DESC, path LIMIT ?`, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("path stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []PathStat
+	for rows.Next() {
+		var p PathStat
+		if err := rows.Scan(&p.Path, &p.PV, &p.UV); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// RefStat 是单来源的 PV/UV；Referrer 空串 = 直接访问。
+type RefStat struct {
+	Referrer string
+	PV       int
+	UV       int
+}
+
+// ReferrerStats returns top referrers by PV since the unix timestamp.
+func (s *Store) ReferrerStats(since int64, limit int) ([]RefStat, error) {
+	rows, err := s.db.Query(
+		`SELECT referrer, COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews
+		 WHERE created_at>=? GROUP BY referrer ORDER BY 2 DESC, referrer LIMIT ?`, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("referrer stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []RefStat
+	for rows.Next() {
+		var r RefStat
+		if err := rows.Scan(&r.Referrer, &r.PV, &r.UV); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

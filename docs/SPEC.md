@@ -70,7 +70,8 @@
 
 认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（24h，HttpOnly/Secure/SameSite=Lax）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
 
-- `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量。
+- `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量（条形图）与最近待审评论就地审核。
+- `GET /admin/stats/html?days=7|30|90` 流量分析台：总量卡、**日粒度浏览时间线**（PV/UV 双柱，零流量日补零）、**热门路径 TOP 100**（PV/UV/占比，前端检索）、**访问来源 TOP 20**（占比条；空 referrer 显示"直接访问"）、剧集下载量。日界按进程本地时区（部署侧 `TZ` 对齐受众时区，容器镜像含 tzdata）。
 - Newsletter 从文章导入：`POST /admin/newsletters/import`（表单 `url`）→ 抓取已公网上线的博客文章，标题进主题、`og:description`/`meta description` 进导语、原文链接进正文，直接落 **draft**（绝不自动发送）。URL 的 host 必须落在 `CORE_SITE_URL` 派生的域名后缀内（如 `blog.xiaowenz.com` → 允许 `xiaowenz.com` 与 `*.xiaowenz.com`），站外一律 400（SSRF 防线）；抓取 10s 超时、正文上限 1 MiB、非 200 → 502。
 - 播客对账：`GET /admin/media` 拉取 `{CORE_SITE_URL}/feed/audio.xml` 与媒体库 `audio/*` 互相勾稽，逐集回答：**已上线**（音频已传且 feed 有对应剧集）/ **未上线**（音频已传、剧集 md 未发——附可复制的剧集 frontmatter 片段，`audio_slug`/`audio_bytes` 与媒体库真实值对齐）/ **缺音频**（feed 剧集指向未上传的音频，enclosure 会 404，红牌警示）。feed 拉不到时对账区标注不可用，页面不 500；缓存口径同博客文章源（10 分钟）。
 - 博客文章源联动：`GET /admin/newsletters/new` 顺带拉取 `{CORE_SITE_URL}/feed.xml`（派生自既有配置，不新增 env），最近文章（≤30 条，含博客与播客条目）渲染成下拉列表，选中提交即走上述 import——全程零手动输入。feed 文章链接的主机统一改写为 feed 实际来源源（Hugo feed 内是 baseURL 绝对地址，apex 切换前点 canonical 会 404）。feed 内存缓存 10 分钟；拉取失败页面照常渲染，手动粘 URL 永远是兜底。

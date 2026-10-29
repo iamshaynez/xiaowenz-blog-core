@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
 	"io"
 	"net/http"
 	"sort"
@@ -240,13 +241,21 @@ func (h *Handler) statsJSON(w http.ResponseWriter, r *http.Request) {
 
 // statsPage renders the same numbers as a table.
 func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
-	since := time.Now().Add(-30 * 24 * time.Hour).Unix()
-	pv, uv, err := h.store.PageviewStats(since)
+	days := 30
+	switch r.URL.Query().Get("days") {
+	case "7":
+		days = 7
+	case "90":
+		days = 90
+	}
+	now := time.Now()
+	since := now.Add(-time.Duration(days) * 24 * time.Hour)
+	pv, uv, err := h.store.PageviewStats(since.Unix())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	downloadsMap, err := h.store.DownloadStats(since)
+	downloadsMap, err := h.store.DownloadStats(since.Unix())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -262,10 +271,104 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
+
+	// ── 时间线（补零成连续序列）＋ 路径/来源维度 ──
+	sparse, err := h.store.PageviewTimeseries(since.Unix())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	byDay := map[string]store.DayStat{}
+	maxPV := 0
+	for _, d := range sparse {
+		byDay[d.Day] = d
+		if d.PV > maxPV {
+			maxPV = d.PV
+		}
+	}
+	cols := make([]DayCol, 0, days+1)
+	labelEvery := days / 8
+	if labelEvery < 1 {
+		labelEvery = 1
+	}
+	for i := 0; i <= days; i++ {
+		day := since.AddDate(0, 0, i)
+		key := day.Format("2006-01-02")
+		d := byDay[key]
+		pvh, uvh := 0, 0
+		if maxPV > 0 {
+			pvh = d.PV * 100 / maxPV
+			uvh = d.UV * 100 / maxPV
+			if d.PV > 0 && pvh < 2 {
+				pvh = 2
+			}
+			if d.UV > 0 && uvh < 2 {
+				uvh = 2
+			}
+		}
+		label := ""
+		if i%labelEvery == 0 || i == days {
+			label = day.Format("01-02")
+		}
+		cols = append(cols, DayCol{Day: key, Label: label, PV: d.PV, UV: d.UV, PVH: pvh, UVH: uvh})
+	}
+
+	pathsRaw, err := h.store.PathStats(since.Unix(), 100)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	paths := make([]PathRow, 0, len(pathsRaw))
+	for _, p := range pathsRaw {
+		share := 0
+		if pv > 0 {
+			share = p.PV * 100 / pv
+		}
+		paths = append(paths, PathRow{PathStat: p, Share: share, Width: share})
+	}
+
+	refsRaw, err := h.store.ReferrerStats(since.Unix(), 20)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	refs := make([]RefRow, 0, len(refsRaw))
+	for _, rf := range refsRaw {
+		share := 0
+		if pv > 0 {
+			share = rf.PV * 100 / pv
+		}
+		display := rf.Referrer
+		if display == "" {
+			display = "直接访问"
+		}
+		refs = append(refs, RefRow{RefStat: rf, Display: display, Share: share, Width: share})
+	}
+
 	h.render(w, "stats.html", map[string]any{
-		"Title": "统计", "PV30": pv, "UV30": uv,
+		"Title": "统计", "PV30": pv, "UV30": uv, "Days": days,
 		"ActiveSubs": active, "PendingComments": pending, "Downloads": downloads,
+		"Timeline": cols, "Paths": paths, "Referrers": refs,
 	})
+}
+
+// DayCol 是时间线的一列：日期、PV/UV 及其条高百分比、稀疏 x 轴标签。
+type DayCol struct {
+	Day, Label string
+	PV, UV     int
+	PVH, UVH   int
+}
+
+// PathRow / RefRow 是带占比与条宽的展示行。
+type PathRow struct {
+	store.PathStat
+	Share, Width int
+}
+
+type RefRow struct {
+	store.RefStat
+	Display      string
+	Share, Width int
 }
 
 // DownloadRow 是仪表盘条形图的一行：slug、近 30 天次数、条宽百分比（模板不做算术）。
