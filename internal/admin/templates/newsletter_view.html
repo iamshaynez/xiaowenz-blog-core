@@ -7,6 +7,13 @@
     <div class="actions">
       <span class="badge {{.N.Status}}">{{.N.Status}}</span>
       <a class="btn ghost" href="/admin/newsletters">← 列表</a>
+      {{if ne .N.Status "sending"}}
+      <form method="POST" action="/admin/newsletters/{{.N.ID}}/delete" class="confirm-del"
+            data-subject="{{.N.Subject}}"
+            onsubmit="return confirm('确认删除《' + this.dataset.subject + '》？')">
+        <button class="btn small danger" type="submit">删除</button>
+      </form>
+      {{end}}
     </div>
   </div>
 

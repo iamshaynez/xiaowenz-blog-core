@@ -141,3 +141,46 @@ func insertSubscriber(t *testing.T, fx *adminFixture, email, status string) {
 		}
 	}
 }
+
+// ── Newsletter 删除：草稿/已发可删，在途拒删 ─────────────────────────
+func TestNewsletterDelete(t *testing.T) {
+	fx := newAdminFixture(t)
+	if _, err := fx.store.CreateNewsletter("测试刊", "md", "<p>md</p>"); err != nil {
+		t.Fatal(err)
+	}
+	s := login(t, fx.handler)
+
+	rec := postForm(fx.handler, s, "/admin/newsletters/1/delete", "")
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303; body=%s", rec.Code, rec.Body)
+	}
+	if list, _ := fx.store.ListNewsletters(); len(list) != 0 {
+		t.Errorf("删除后列表应空")
+	}
+
+	// sending 在途拒删 → 409
+	id2, err := fx.store.CreateNewsletter("发送中", "md", "<p>x</p>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.store.MarkNewsletterSending(id2); err != nil {
+		t.Fatal(err)
+	}
+	rec2 := postForm(fx.handler, s, "/admin/newsletters/2/delete", "")
+	if rec2.Code != http.StatusConflict {
+		t.Errorf("sending 拒删 status = %d, want 409", rec2.Code)
+	}
+
+	// 列表页有删除按钮（带确认），sending 状态不出
+	_, _ = fx.store.CreateNewsletter("带按钮的草稿", "md", "<p>x</p>")
+	page := httptest.NewRecorder()
+	req := authed(http.MethodGet, "/admin/newsletters", nil, s)
+	fx.handler.ServeHTTP(page, req)
+	body := page.Body.String()
+	if !strings.Contains(body, "/admin/newsletters/3/delete") {
+		t.Error("列表页缺删除入口")
+	}
+	if !strings.Contains(body, "confirm-del") {
+		t.Error("删除按钮应带确认交互")
+	}
+}

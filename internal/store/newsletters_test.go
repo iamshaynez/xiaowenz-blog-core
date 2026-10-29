@@ -2,6 +2,7 @@ package store
 
 import (
 	"testing"
+	"time"
 )
 
 func TestNewsletterLifecycle(t *testing.T) {
@@ -100,5 +101,51 @@ func TestListNewsletters(t *testing.T) {
 	// Newest first.
 	if list[0].Subject != "two" {
 		t.Errorf("order wrong: %+v", list)
+	}
+}
+
+// DeleteNewsletter：draft 可删；sending 在途拒删；sent 连带清理 send_log。
+func TestDeleteNewsletter(t *testing.T) {
+	s := newTestStore(t)
+
+	// draft → 可删
+	id, err := s.CreateNewsletter("删我", "md", "<p>md</p>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteNewsletter(id); err != nil {
+		t.Fatalf("draft 删除失败: %v", err)
+	}
+	if list, _ := s.ListNewsletters(); len(list) != 0 {
+		t.Errorf("删除后列表应空: %+v", list)
+	}
+
+	// sending → 在途拒删
+	id2, _ := s.CreateNewsletter("发送中", "md", "<p>x</p>")
+	if err := s.MarkNewsletterSending(id2); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteNewsletter(id2); err == nil {
+		t.Error("sending 状态必须拒删（在途群发不可中断为删除）")
+	}
+
+	// sent → 删除连带 send_log（subscriber_id 有外键，先造真实订阅者）
+	id3, _ := s.CreateNewsletter("已发", "md", "<p>x</p>")
+	sub1, _ := s.UpsertPending("a@x.com", "tok-a", time.Now().Add(time.Hour))
+	sub2, _ := s.UpsertPending("b@x.com", "tok-b", time.Now().Add(time.Hour))
+	_ = s.MarkNewsletterSending(id3)
+	_ = s.MarkNewsletterSent(id3, 3, 0)
+	if err := s.InsertSendLog(id3, sub1.ID, "sent", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertSendLog(id3, sub2.ID, "sent", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteNewsletter(id3); err != nil {
+		t.Fatalf("sent 删除失败: %v", err)
+	}
+	logs, _ := s.ListSendLog(id3)
+	if len(logs) != 0 {
+		t.Errorf("send_log 应级联清理，剩 %d 条", len(logs))
 	}
 }

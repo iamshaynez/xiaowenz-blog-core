@@ -75,6 +75,26 @@ func (h *Handler) newsletterView(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// newsletterDelete removes a draft/sent newsletter (cascades send_log);
+// sending（在途）拒删。
+func (h *Handler) newsletterDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	if err := h.store.DeleteNewsletter(id); err != nil {
+		if strings.Contains(err.Error(), "sending") {
+			writeErr(w, http.StatusConflict, "sending in flight")
+			return
+		}
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	h.log.Info("newsletter deleted", "id", id)
+	h.redirect(w, r, "/admin/newsletters")
+}
+
 // newsletterSend kicks off the background fan-out.
 func (h *Handler) newsletterSend(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

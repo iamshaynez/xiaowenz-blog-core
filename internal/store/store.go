@@ -822,3 +822,32 @@ func (s *Store) ReferrerStats(since int64, limit int) ([]RefStat, error) {
 	}
 	return out, rows.Err()
 }
+
+// DeleteNewsletter removes a newsletter. sending（在途群发）拒删；
+// 删除连带清理 send_log（事务内完成，不留孤儿投递记录）。
+func (s *Store) DeleteNewsletter(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("delete newsletter: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	if err := tx.QueryRow(`SELECT status FROM newsletters WHERE id=?`, id).Scan(&status); err != nil {
+		return ErrNotFound
+	}
+	if status == "sending" {
+		return fmt.Errorf("newsletter %d is sending", id)
+	}
+	if _, err := tx.Exec(`DELETE FROM send_log WHERE newsletter_id=?`, id); err != nil {
+		return fmt.Errorf("delete send_log: %w", err)
+	}
+	res, err := tx.Exec(`DELETE FROM newsletters WHERE id=?`, id)
+	if err != nil {
+		return fmt.Errorf("delete newsletter: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
