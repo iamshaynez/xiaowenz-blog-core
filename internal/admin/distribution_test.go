@@ -13,10 +13,11 @@ const distFeed = `<?xml version="1.0"?><rss version="2.0"><channel>
 <item><title><![CDATA[Ep 005. 上一集]]></title><link>https://c.test/episodes/ep-old</link><pubDate>Thu, 20 Aug 2026 08:00:00 +0000</pubDate><enclosure url="https://c.test/a/ep-old.mp3" length="111" type="audio/mpeg"/></item>
 </channel></rss>`
 
+// 镜像真实结构：剧集条目也带 feedUrl（曾让判别逻辑翻车），判别只能靠 kind。
 const itunesOK = `{"resultCount":3,"results":[
-{"wrapperType":"track","collectionName":"三杯过后","feedUrl":"https://xiaowenz.com/feed/audio.xml"},
-{"wrapperType":"podcastEpisode","trackName":"Ep 005. 上一集","releaseDate":"2026-08-20T08:00:00Z"},
-{"wrapperType":"podcastEpisode","trackName":"Ep 004. 更早","releaseDate":"2026-08-08T00:00:00Z"}
+{"wrapperType":"track","kind":"podcast","collectionName":"三杯过后","feedUrl":"https://xiaowenz.com/feed/audio.xml"},
+{"wrapperType":"podcastEpisode","kind":"podcast-episode","feedUrl":"https://xiaowenz.com/feed/audio.xml","trackName":"Ep 005. 上一集","releaseDate":"2026-08-20T08:00:00Z"},
+{"wrapperType":"podcastEpisode","kind":"podcast-episode","feedUrl":"https://xiaowenz.com/feed/audio.xml","trackName":"Ep 004. 更早","releaseDate":"2026-08-08T00:00:00Z"}
 ]}`
 
 func distFixture(t *testing.T) *adminFixture {

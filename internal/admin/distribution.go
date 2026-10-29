@@ -109,6 +109,7 @@ func (h *Handler) appleStatus(showID, country string, posts []feedPost) appleSta
 	var lr struct {
 		Results []struct {
 			WrapperType  string `json:"wrapperType"`
+			Kind         string `json:"kind"`
 			TrackName    string `json:"trackName"`
 			ReleaseDate  string `json:"releaseDate"`
 			FeedURL      string `json:"feedUrl"`
@@ -129,18 +130,21 @@ func (h *Handler) appleStatus(showID, country string, posts []feedPost) appleSta
 	st.OurLatest = ourLatest
 
 	for _, r := range lr.Results {
-		if r.FeedURL != "" { // 节目本体
+		// 真实响应里剧集条目也带 feedUrl——判别只能靠 wrapperType：
+		// kind=podcast 是节目本体，podcastEpisode 是剧集。
+		switch r.Kind {
+		case "podcast":
 			st.ShowName = r.CollectionNm
 			st.FeedURL = r.FeedURL
 			host := hostOf(r.FeedURL)
 			st.FeedDomainOK = host != "" &&
 				(host == siteHostSuffix(h.cfg.SiteURL) ||
 					strings.HasSuffix(host, "."+siteHostSuffix(h.cfg.SiteURL)))
-			continue
-		}
-		if r.WrapperType == "podcastEpisode" && r.ReleaseDate > st.LatestDate {
-			st.LatestDate = r.ReleaseDate[:10]
-			st.LatestTitle = r.TrackName
+		case "podcast-episode":
+			if len(r.ReleaseDate) >= 10 && r.ReleaseDate[:10] > st.LatestDate {
+				st.LatestDate = r.ReleaseDate[:10]
+				st.LatestTitle = r.TrackName
+			}
 		}
 	}
 	if st.LatestDate != "" && ourLatest != "" {
