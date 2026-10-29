@@ -45,6 +45,11 @@ type Handler struct {
 	loginLimit *ratelimit.Limiter
 	// maxUpload caps media uploads (SPEC §4: 100MB); a field so tests can shrink it.
 	maxUpload int64
+
+	// newsletter-import（SPEC §4）：从文章 URL 抓取生成草稿。
+	// importHostSuffix 是 CORE_SITE_URL 派生的域名后缀（SSRF 白名单）；空 = 功能关闭。
+	importHostSuffix string
+	importClient     *http.Client
 }
 
 const sessionCookieName = "core_session"
@@ -57,14 +62,16 @@ func NewHandler(d Deps) *Handler {
 		log = slog.Default()
 	}
 	return &Handler{
-		store:      d.Store,
-		cfg:        d.Config,
-		s3:         d.S3,
-		sender:     d.Sender,
-		log:        log,
-		secure:     d.Config.IsProd(),
-		loginLimit: ratelimit.New(5, time.Minute),
-		maxUpload:  maxUploadBytes,
+		store:            d.Store,
+		cfg:              d.Config,
+		s3:               d.S3,
+		sender:           d.Sender,
+		log:              log,
+		secure:           d.Config.IsProd(),
+		loginLimit:       ratelimit.New(5, time.Minute),
+		importHostSuffix: siteHostSuffix(d.Config.SiteURL),
+		importClient:     &http.Client{Timeout: 10 * time.Second},
+		maxUpload:        maxUploadBytes,
 	}
 }
 
@@ -88,6 +95,7 @@ func (h *Handler) Routes() http.Handler {
 	guarded.HandleFunc("GET /admin/newsletters", h.newslettersPage)
 	guarded.HandleFunc("GET /admin/newsletters/new", h.newsletterNew)
 	guarded.HandleFunc("POST /admin/newsletters", h.newsletterCreate)
+	guarded.HandleFunc("POST /admin/newsletters/import", h.newsletterImport)
 	guarded.HandleFunc("GET /admin/newsletters/{id}", h.newsletterView)
 	guarded.HandleFunc("POST /admin/newsletters/{id}/send", h.newsletterSend)
 	guarded.HandleFunc("GET /admin/media", h.mediaPage)

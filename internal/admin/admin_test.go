@@ -22,6 +22,7 @@ import (
 
 type adminFixture struct {
 	handler http.Handler
+	raw     *Handler // 需要注入内部字段（如 importHostSuffix）的测试用
 	store   *store.Store
 	s3      *s3store.Fake
 	mailer  *mailer.Fake
@@ -55,7 +56,7 @@ func newAdminFixture(t *testing.T) *adminFixture {
 		Sender: sender,
 		Logger: slog.New(slog.DiscardHandler),
 	})
-	return &adminFixture{handler: h.Routes(), store: st, s3: s3, mailer: fm, sender: sender, cfg: cfg}
+	return &adminFixture{handler: h.Routes(), raw: h, store: st, s3: s3, mailer: fm, sender: sender, cfg: cfg}
 }
 
 // login performs the admin login and returns the session cookie.

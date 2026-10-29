@@ -69,6 +69,7 @@
 认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（24h，HttpOnly/Secure/SameSite=Lax）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
 
 - `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量。
+- Newsletter 从文章导入：`POST /admin/newsletters/import`（表单 `url`）→ 抓取已公网上线的博客文章，标题进主题、`og:description`/`meta description` 进导语、原文链接进正文，直接落 **draft**（绝不自动发送）。URL 的 host 必须落在 `CORE_SITE_URL` 派生的域名后缀内（如 `blog.xiaowenz.com` → 允许 `xiaowenz.com` 与 `*.xiaowenz.com`），站外一律 400（SSRF 防线）；抓取 10s 超时、正文上限 1 MiB、非 200 → 502。
 - 订阅名单：`GET /admin/subscribers?status=&q=`（分页 50）；`POST /admin/subscribers/import`（CSV 上传，列=email[,confirmed]，重复跳过，导入即 active 并记 confirmed_at；**导入不进验证流程**——名单来自旧平台已验证用户）；`GET /admin/subscribers/export`（CSV；公式注入中和：以 `=`/`+`/`-`/`@`/tab/CR 开头的单元格前缀单引号）；`POST /admin/subscribers/{id}/delete`。
 - 评论审核：`GET /admin/comments?status=pending`；`POST /admin/comments/{id}/approve|reject`。
 - Newsletter：`GET /admin/newsletters`（历史列表）；`GET /admin/newsletters/new`；`POST /admin/newsletters`（subject+markdown → goldmark 渲染 html，存 draft）；`GET /admin/newsletters/{id}`（预览 HTML）；`POST /admin/newsletters/{id}/send` → 后台 goroutine 逐人发送：
