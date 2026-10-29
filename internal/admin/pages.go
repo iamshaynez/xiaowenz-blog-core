@@ -40,6 +40,7 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
 		"UV30":            uv,
 		"Downloads":       rows,
 		"RecentPending":   recent,
+		"Titles":          h.slugTitles(),
 	})
 }
 
@@ -186,6 +187,7 @@ func (h *Handler) commentsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	h.render(w, "comments.html", map[string]any{
 		"Title": "评论审核", "Comments": comments, "Status": status, "Counts": counts,
+		"Titles": h.slugTitles(),
 	})
 }
 

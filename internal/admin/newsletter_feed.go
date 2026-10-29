@@ -128,6 +128,7 @@ func (h *Handler) fetchFeedPosts(feedURL string) []feedPost {
 		if i := strings.LastIndex(slug, "/"); i >= 0 {
 			slug = slug[i+1:]
 		}
+		slug = strings.TrimSuffix(slug, ".html") // Hugo 博客是 /blog/{slug}..html
 		posts = append(posts, feedPost{Title: title, Date: date, URL: link, Slug: slug})
 	}
 	if len(posts) == 0 {
@@ -143,4 +144,21 @@ func submatch(re *regexp.Regexp, b []byte) string {
 		return ""
 	}
 	return strings.TrimSpace(string(m[1]))
+}
+
+// slugTitles 汇总博客与播客 feed 的 slug→标题，供评论评审等处展示；
+// feed 拉不到时返回空 map（调用方回退 slug）。
+func (h *Handler) slugTitles() map[string]string {
+	m := map[string]string{}
+	if posts, ok := h.audioFeedPosts(); ok {
+		for _, p := range posts {
+			m[p.Slug] = p.Title
+		}
+	}
+	for _, p := range h.blogPosts() {
+		if _, exists := m[p.Slug]; !exists {
+			m[p.Slug] = p.Title
+		}
+	}
+	return m
 }

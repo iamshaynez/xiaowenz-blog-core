@@ -39,7 +39,7 @@
     <div class="body">
       {{range .RecentPending}}
       <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);">
-        <span class="badge pending">{{.PostSlug}}</span>
+        {{$t := index $.Titles .PostSlug}}{{if $t}}<b style="font-size:12.5px;">{{$t}}</b>{{else}}<span class="badge pending">{{.PostSlug}}</span>{{end}}
         <b style="font-size:13px;">{{.AuthorName}}</b>
         <span class="quote" style="flex:1;min-width:200px;">{{.Content}}</span>
         <span class="h-actions" style="display:flex;gap:6px;">

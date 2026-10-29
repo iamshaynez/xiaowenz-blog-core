@@ -15,7 +15,7 @@
     <tr><th>文章</th><th>作者</th><th>内容</th><th>时间</th><th>状态</th><th></th></tr>
     {{range .Comments}}
     <tr>
-      <td><span class="badge">{{.PostSlug}}</span></td>
+      <td>{{$t := index $.Titles .PostSlug}}{{if $t}}<b style="font-size:13px;">{{$t}}</b><div class="dim mono" style="font-size:11px;">{{.PostSlug}}</div>{{else}}<span class="badge">{{.PostSlug}}</span>{{end}}</td>
       <td><b>{{.AuthorName}}</b>{{if .AuthorEmail}}<div class="dim mono" style="font-size:11px;">{{.AuthorEmail}}</div>{{end}}</td>
       <td><div class="quote">{{.Content}}</div></td>
       <td class="dim num">{{rfc3339 .CreatedAt}}</td>
