@@ -21,6 +21,7 @@ type mediaItem = store.Media
 
 type podcastRow struct {
 	Slug    string
+	Title   string // feed 里的剧集标题；未上线为空
 	Bytes   int64
 	Live    bool
 	Snippet string // 未上线时给作者抄的剧集 frontmatter 片段
@@ -42,6 +43,10 @@ func (h *Handler) podcastCoherenceFor(media []mediaItem) *podcastCoherence {
 	}
 
 	c := &podcastCoherence{FeedOK: ok}
+	titles := map[string]string{}
+	for _, p := range posts {
+		titles[p.Slug] = p.Title
+	}
 	uploaded := map[string]bool{}
 	for _, m := range media {
 		if !strings.HasPrefix(m.Key, "audio/") || !strings.HasSuffix(m.Key, ".mp3") {
@@ -49,7 +54,7 @@ func (h *Handler) podcastCoherenceFor(media []mediaItem) *podcastCoherence {
 		}
 		slug := strings.TrimSuffix(strings.TrimPrefix(m.Key, "audio/"), ".mp3")
 		uploaded[slug] = true
-		row := podcastRow{Slug: slug, Bytes: m.Bytes, Live: ok && slugLive[slug]}
+		row := podcastRow{Slug: slug, Title: titles[slug], Bytes: m.Bytes, Live: ok && slugLive[slug]}
 		if !row.Live {
 			row.Snippet = h.episodeSnippet(slug, m.Bytes)
 		}

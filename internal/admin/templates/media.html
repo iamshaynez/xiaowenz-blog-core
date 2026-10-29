@@ -37,7 +37,10 @@
         <tr><th>剧集 slug</th><th>音频大小</th><th>状态</th><th>frontmatter 片段</th></tr>
         {{range .Rows}}
         <tr>
-          <td class="mono">{{.Slug}}</td>
+          <td>
+            {{if .Title}}<b style="font-size:13px;">{{.Title}}</b><div class="dim mono" style="font-size:11px;">{{.Slug}}</div>
+            {{else}}<span class="mono">{{.Slug}}</span> <span class="dim" style="font-size:11px;">（剧集未发布）</span>{{end}}
+          </td>
           <td class="num">{{fmtBytes .Bytes}}</td>
           <td>{{if .Live}}<span class="badge ok">已上线</span>{{else}}<span class="badge pending">未上线</span> 剧集 md 还没发{{end}}</td>
           <td>{{if .Snippet}}<details class="snippet"><summary>复制片段</summary><pre>{{.Snippet}}</pre></details>{{else}}<span class="dim">—</span>{{end}}</td>

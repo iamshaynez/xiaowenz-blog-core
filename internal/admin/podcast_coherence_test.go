@@ -35,9 +35,11 @@ func TestMediaPagePodcastCoherence(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		"已上线",   // ep-a：音频 + 剧集都在
-		"未上线",   // ep-b：音频在、剧集没发
-		"22222", // ep-b 的 frontmatter 片段必须带真实字节数
+		"已上线",            // ep-a：音频 + 剧集都在
+		"Ep 100. 已上线的剧集", // 已上线行要展示 feed 里的剧集标题，不只是 slug
+		"未上线",            // ep-b：音频在、剧集没发
+		"剧集未发布",          // 未上线行没有标题可循，应标注而不是空白
+		"22222",          // ep-b 的 frontmatter 片段必须带真实字节数
 		"audio_slug: ep-b",
 		"缺音频",    // ep-c：剧集在 feed 里、音频没传
 		"Ep 101", // 缺音频的剧集名要能认出来
