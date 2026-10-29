@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,10 +25,11 @@ const (
 )
 
 type feedPost struct {
-	Title string
-	Date  string // YYYY-MM-DD，可读展示用
-	URL   string // 已改写为 feedOrigin 的文章链接
-	Slug  string // URL 末段（剧集/文章 slug），对账用
+	Title  string
+	Date   string // YYYY-MM-DD，可读展示用
+	URL    string // 已改写为 feedOrigin 的文章链接
+	Slug   string // URL 末段（剧集/文章 slug），对账用
+	EncLen int    // enclosure length 属性（播客字节勾稽用）
 }
 
 var (
@@ -35,6 +37,7 @@ var (
 	reItemTi  = regexp.MustCompile(`(?is)<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>`)
 	reItemURL = regexp.MustCompile(`(?is)<link>(.*?)</link>`)
 	reItemDt  = regexp.MustCompile(`(?is)<pubDate>(.*?)</pubDate>`)
+	reItemEnc = regexp.MustCompile(`(?is)<enclosure[^>]+length="(\d+)"`)
 )
 
 // blogPosts returns the cached recent-posts list, refreshing from the blog
@@ -129,7 +132,11 @@ func (h *Handler) fetchFeedPosts(feedURL string) []feedPost {
 			slug = slug[i+1:]
 		}
 		slug = strings.TrimSuffix(slug, ".html") // Hugo 博客是 /blog/{slug}..html
-		posts = append(posts, feedPost{Title: title, Date: date, URL: link, Slug: slug})
+		encLen := 0
+		if em := reItemEnc.FindSubmatch(m[1]); em != nil {
+			encLen, _ = strconv.Atoi(string(em[1]))
+		}
+		posts = append(posts, feedPost{Title: title, Date: date, URL: link, Slug: slug, EncLen: encLen})
 	}
 	if len(posts) == 0 {
 		return nil

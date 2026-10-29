@@ -28,3 +28,27 @@ func (s *Store) insertDownloadAt(slug, ipHash string, t time.Time) error {
 		slug, ipHash, t.Unix())
 	return err
 }
+
+// Settings：管理台可持久化配置（播客分发等），get/set 往返 + 覆盖更新。
+func TestSettingsRoundtrip(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.GetSetting("apple_show_id"); err == nil {
+		// 不存在不报错——返回空即可（见实现）；这里只验证未写入前为空
+	}
+	if err := s.SetSetting("apple_show_id", "1880021392"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	v, err := s.GetSetting("apple_show_id")
+	if err != nil || v != "1880021392" {
+		t.Fatalf("GetSetting = %q, %v", v, err)
+	}
+	if err := s.SetSetting("apple_show_id", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.GetSetting("apple_show_id"); v != "42" {
+		t.Errorf("覆盖更新失败: %q", v)
+	}
+	if v, err := s.GetSetting("never_set"); err != nil || v != "" {
+		t.Errorf("未写入的 key 应返回空串: %q, %v", v, err)
+	}
+}

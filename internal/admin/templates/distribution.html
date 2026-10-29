@@ -1,0 +1,95 @@
+{{template "head" .}}
+{{template "nav"}}
+<main class="editorial-enter">
+  <div class="page-head">
+    <span class="kicker">DISTRIBUTION</span>
+    <h1>分发与同步</h1>
+    <div class="actions"><a class="btn ghost" href="/admin/media">← 媒体库</a></div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">我们的 feed</span>
+      <span class="h-actions"><a class="btn small ghost copy-btn" data-copy="{{.OurFeedURL}}" href="javascript:void(0)">复制地址</a>
+      <a class="btn small ghost" href="{{.OurFeedURL}}" target="_blank" rel="noopener">打开</a></span>
+    </header>
+    <div class="body">
+      <span class="mono" style="font-size:12.5px;">{{.OurFeedURL}}</span>
+      <p class="hint" style="margin:8px 0 0;">平台按此地址抓取（小宇宙数小时~1 天；Apple ≤24h，可在 Podcasts Connect 手动刷新）。</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">feed 自检 · enclosure ↔ 媒体库</span>
+      {{if not .FeedOK}}<span class="badge bad">feed 拉取失败</span>{{end}}
+    </header>
+    <div class="body tight"><div class="tbl-wrap">
+    <table class="tbl">
+      <tr><th>剧集</th><th>feed 字节</th><th>媒体库字节</th><th>勾稽</th></tr>
+      {{range .Checks}}
+      <tr>
+        <td><b style="font-size:13px;">{{.Title}}</b><div class="dim mono" style="font-size:11px;">{{.Slug}}</div></td>
+        <td class="num">{{.FeedBytes}}</td>
+        <td class="num dim">{{if .MediaOK}}{{.MediaBytes}}{{else}}未注册{{end}}</td>
+        <td>{{if and .MediaOK .BytesOK}}<span class="badge ok">一致</span>{{else if not .MediaOK}}<span class="badge bad">音频未注册</span>{{else}}<span class="badge bad">字节不一致</span>{{end}}</td>
+      </tr>
+      {{else}}<tr><td colspan="4"><div class="empty">feed 不可用时自检跳过</div></td></tr>{{end}}
+    </table>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">Apple Podcasts 目录</span>
+      {{if .Apple.Configured}}{{if .Apple.Err}}<span class="badge bad">查询失败</span>
+      {{else if .Apple.Synced}}<span class="badge ok">已同步</span>
+      {{else}}<span class="badge pending">滞后 {{.Apple.LagDays}} 天</span>{{end}}{{end}}
+    </header>
+    <div class="body">
+      {{if not .Apple.Configured}}
+        <p class="hint">未配置 show ID —— 在下方填入后可实时对比 Apple 收录进度。</p>
+        <p class="hint">ID 获取：iTunes/Apple Podcasts 里分享节目链接里的 <span class="mono">id数字</span>，或 <a class="link" href="https://podcastsconnect.apple.com" target="_blank" rel="noopener">Podcasts Connect</a>。</p>
+      {{else if .Apple.Err}}
+        <p style="color:var(--bad);font-size:13px;">{{.Apple.Err}}</p>
+      {{else}}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+          <div><div class="fl">节目</div><b>{{.Apple.ShowName}}</b></div>
+          <div><div class="fl">Apple 已收录最新</div><b>{{.Apple.LatestTitle}}</b> <span class="dim num">{{.Apple.LatestDate}}</span></div>
+          <div><div class="fl">我们 feed 最新</div><b class="num">{{.Apple.OurLatest}}</b>
+            {{if .Apple.Synced}}<span class="badge ok" style="margin-left:6px;">同步</span>{{else}}<span class="badge pending" style="margin-left:6px;">滞后 {{.Apple.LagDays}} 天</span>{{end}}</div>
+          <div><div class="fl">Apple 登记的 feed</div>
+            <span class="mono" style="font-size:12px;">{{.Apple.FeedURL}}</span>
+            {{if .Apple.FeedDomainOK}}<span class="badge ok" style="margin-left:6px;">指向本站</span>{{else}}<span class="badge bad" style="margin-left:6px;">非本站域名！</span>{{end}}
+          </div>
+        </div>
+        <p class="hint" style="margin-top:12px;">滞后 ≤1 天属正常抓取节奏；持续滞后到 <a class="link" href="https://podcastsconnect.apple.com" target="_blank" rel="noopener">Podcasts Connect</a> 手动刷新。</p>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">小宇宙</span></header>
+    <div class="body">
+      {{if .XyzURL}}
+      <p style="font-size:13px;">节目页：<a class="link" href="{{.XyzURL}}" target="_blank" rel="noopener">{{.XyzURL}}</a></p>
+      {{else}}
+      <p class="hint">未配置节目页链接。</p>
+      {{end}}
+      <p class="hint">小宇宙无公开同步 API：收录后按平台节奏自动抓取本站 feed（数小时~1 天）。新剧集上线后若想加速，可到 <a class="link" href="https://xiaoyuzhoufm.com/" target="_blank" rel="noopener">主播后台</a> 触发更新；提交收录也在主播后台（粘贴上面复制的 feed 地址）。</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><span class="t">平台配置</span></header>
+    <div class="body">
+      <form method="POST" action="/admin/distribution/settings" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end;">
+        <label class="field" style="margin:0;"><span class="fl">Apple show ID</span>
+        <input type="text" name="apple_show_id" value="{{.AppleID}}" placeholder="如 1880021392"></label>
+        <label class="field" style="margin:0;"><span class="fl">Apple 区域</span>
+        <input type="text" name="apple_country" value="{{.AppleCountry}}" placeholder="US / CN / TW"></label>
+        <label class="field" style="margin:0;"><span class="fl">小宇宙节目页 URL</span>
+        <input type="url" name="xiaoyuzhou_url" value="{{.XyzURL}}" placeholder="https://www.xiaoyuzhoufm.com/podcast/…"></label>
+        <button class="btn primary" type="submit">保存配置</button>
+      </form>
+    </div>
+  </div>
+</main>
+</body></html>

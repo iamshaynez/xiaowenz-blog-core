@@ -64,6 +64,9 @@ type Handler struct {
 	audioFeedURL   string
 	audioPosts     []feedPost
 	audioFetchedAt time.Time
+
+	// 分发管理（SPEC §4）：iTunes 目录查询基址（可注入测试假端点）
+	itunesBase string
 }
 
 const sessionCookieName = "core_session"
@@ -87,6 +90,7 @@ func NewHandler(d Deps) *Handler {
 		importClient:     &http.Client{Timeout: 10 * time.Second},
 		feedURL:          strings.TrimRight(d.Config.SiteURL, "/") + "/feed.xml",
 		audioFeedURL:     strings.TrimRight(d.Config.SiteURL, "/") + "/feed/audio.xml",
+		itunesBase:       "https://itunes.apple.com",
 		feedOrigin:       originOf(d.Config.SiteURL),
 		feedClient:       &http.Client{Timeout: 5 * time.Second},
 		maxUpload:        maxUploadBytes,
@@ -118,6 +122,8 @@ func (h *Handler) Routes() http.Handler {
 	guarded.HandleFunc("POST /admin/newsletters/{id}/send", h.newsletterSend)
 	guarded.HandleFunc("POST /admin/newsletters/{id}/delete", h.newsletterDelete)
 	guarded.HandleFunc("GET /admin/media", h.mediaPage)
+	guarded.HandleFunc("GET /admin/distribution", h.distributionPage)
+	guarded.HandleFunc("POST /admin/distribution/settings", h.distributionSettings)
 	guarded.HandleFunc("POST /admin/media", h.mediaUpload)
 	guarded.HandleFunc("GET /admin/stats", h.statsJSON)
 	guarded.HandleFunc("GET /admin/stats/html", h.statsPage)

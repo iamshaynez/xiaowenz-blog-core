@@ -851,3 +851,30 @@ func (s *Store) DeleteNewsletter(id int64) error {
 	}
 	return tx.Commit()
 }
+
+// ── Settings：管理台持久化配置（播客分发等小数据）──────────────────
+
+// GetSetting returns the value for key, or "" when unset.
+func (s *Store) GetSetting(key string) (string, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get setting: %w", err)
+	}
+	return v, nil
+}
+
+// SetSetting upserts a setting value.
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+		key, value, s.now().Unix())
+	if err != nil {
+		return fmt.Errorf("set setting: %w", err)
+	}
+	return nil
+}
