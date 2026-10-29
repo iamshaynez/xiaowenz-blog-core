@@ -23,6 +23,7 @@ import (
 
 var (
 	reTitle    = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+	reOGTitle  = regexp.MustCompile(`(?is)<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*)["']`)
 	reOGDesc   = regexp.MustCompile(`(?is)<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']*)["']`)
 	reMetaDesc = regexp.MustCompile(`(?is)<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']`)
 )
@@ -73,7 +74,10 @@ func (h *Handler) newsletterImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	title := firstMatch(reTitle, page)
+	title := firstMatch(reOGTitle, page)
+	if title == "" {
+		title = firstMatch(reTitle, page)
+	}
 	desc := firstMatch(reOGDesc, page)
 	if desc == "" {
 		desc = firstMatch(reMetaDesc, page)

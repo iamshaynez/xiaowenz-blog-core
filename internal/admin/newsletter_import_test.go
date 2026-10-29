@@ -39,8 +39,10 @@ func postForm(h http.Handler, session *http.Cookie, path, form string) *httptest
 // og:description 进导语、原文链接进正文，落库为 draft（绝不发送）。
 func TestNewsletterImportFromPost(t *testing.T) {
 	fx := newAdminFixture(t)
+	// og:title 干净（不带站名后缀），<title> 带后缀 —— 主题必须取 og:title
 	page := startPostPage(t, 200, `<!doctype html><html><head>
-<title>每个人都快起来了，公司为什么没快起来？</title>
+<title>每个人都快起来了，公司为什么没快起来？ - 三杯过后 | Xiaowen.Z Deployed</title>
+<meta property="og:title" content="每个人都快起来了，公司为什么没快起来？">
 <meta property="og:description" content="AI 提效从来就不是一个个人效率问题">
 </head><body><article>正文</article></body></html>`)
 	allowImportsForTest(t, fx.raw, page.URL)
