@@ -77,6 +77,7 @@ params:
 字段约定：
 
 - `website` 是蜜罐字段：对真人留空、对爬虫预填，**不要渲染成可见输入框**。
+- 评论的 `email` **选填**：留空直接入库（author_email 为空串），留了则必须为合法地址（否则 400 `invalid email`）。前端不要给邮箱加 `required`。
 - `turnstile_token`：配了 Turnstile 时必传（评论与订阅都强制校验，不配 secret 的 dev 模式除外）。在页面加载 Turnstile widget，`token = turnstile.getResponse(widgetId)`。
 - 评论列表的作者是 `author_name`（不是 `name`）；时间是 RFC3339 的 `created_at`。
 - 订阅/评论的 202 都是「已受理」，提示语写「请查收验证邮件 / 等待审核」。

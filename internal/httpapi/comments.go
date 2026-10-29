@@ -45,10 +45,13 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "name must be 1-50 chars")
 		return
 	}
-	addr, err := mail.ParseAddress(req.Email)
-	if err != nil || addr.Address != req.Email {
-		writeErr(w, http.StatusBadRequest, "invalid email")
-		return
+	// 邮箱选填：留空跳过校验；留了就必须是合法地址（见 SPEC §3.2）。
+	if req.Email != "" {
+		addr, err := mail.ParseAddress(req.Email)
+		if err != nil || addr.Address != req.Email {
+			writeErr(w, http.StatusBadRequest, "invalid email")
+			return
+		}
 	}
 	if n := utf8.RuneCountInString(req.Content); n < 1 || n > 2000 {
 		writeErr(w, http.StatusBadRequest, "content must be 1-2000 chars")

@@ -45,6 +45,32 @@ func TestCommentSubmitNotifiesAdmin(t *testing.T) {
 	}
 }
 
+// 邮箱是选填项：不留下邮箱的评论照样入库、照样通知管理员；
+// 留了但格式非法仍然拒绝。
+func TestCommentWithoutEmail(t *testing.T) {
+	srv, st, fm := newTestServer(t)
+	rec := doJSON(t, srv, http.MethodPost, "/api/comments", map[string]string{
+		"post": "ep-01", "name": "小明", "content": "不留邮箱也想说话",
+		"turnstile_token": "t",
+	}, nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body=%s", rec.Code, rec.Body)
+	}
+
+	pending, err := st.ListComments("pending")
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending = %v, %v", pending, err)
+	}
+	if pending[0].AuthorEmail != "" {
+		t.Errorf("AuthorEmail = %q, want empty", pending[0].AuthorEmail)
+	}
+	if len(fm.Sent) != 1 {
+		t.Errorf("admin notify emails = %d, want 1", len(fm.Sent))
+	}
+
+	// 但留了格式非法的邮箱仍然 400（见 TestCommentValidation 的 bad email 用例）。
+}
+
 func TestCommentValidation(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	cases := []map[string]string{

@@ -53,7 +53,7 @@
 - `GET /api/unsub?token=` → 200 确认页（HTML）；`POST /api/unsub` → 执行退订（防 prefetch 误触；body 上限 4 KiB）。群发邮件必须带 `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` 头（RFC 8058 一键退订）。
 
 ### 3.2 评论
-- `POST /api/comments` `{post, name, email, content, turnstile_token, website}` → 202，状态 pending，限流 10 次/小时/IP；post 长度 1–200，内容长度 1–2000，name 1–50；给管理员发通知邮件（含 approve/reject 一键链接，带签名 token）。
+- `POST /api/comments` `{post, name, email, content, turnstile_token, website}` → 202，状态 pending，限流 10 次/小时/IP；post 长度 1–200，内容长度 1–2000，name 1–50；**email 选填**（留空跳过校验，留了必须为合法地址）；给管理员发通知邮件（含 approve/reject 一键链接，带签名 token）。
 - `GET /api/comments?post={slug}` → 200 `{comments:[{author_name, content, created_at}]}` 仅 approved，按时间正序。
 - `GET /api/comments/moderate?token=` → admin 邮件里的一键 approve/reject（HMAC 签名 comment_id+action+expiry，链接 7 天有效）。`CORE_ADMIN_TOKEN` 为空时该端点整体禁用（签名密钥会退化为公开常量，必须 fail-closed）。
 
