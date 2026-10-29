@@ -2,6 +2,17 @@
 {{template "nav"}}
 <main>
   <h1>新建 Newsletter</h1>
+  {{if .Posts}}
+  <div class="card">
+    <form method="POST" action="/admin/newsletters/import">
+      <label for="post-url">从最近文章生成草稿（选中即抓取，链接/标题/导语自动填）</label>
+      <select name="url" id="post-url" required>
+        {{range .Posts}}<option value="{{.URL}}">{{if .Date}}{{.Date}} · {{end}}{{.Title}}</option>{{end}}
+      </select>
+      <div style="margin-top:12px;"><button type="submit">生成草稿</button></div>
+    </form>
+  </div>
+  {{end}}
   <div class="card">
     <form method="POST" action="/admin/newsletters">
       <label for="subject">主题</label>

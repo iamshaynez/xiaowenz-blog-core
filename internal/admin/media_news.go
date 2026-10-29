@@ -24,9 +24,10 @@ func (h *Handler) newslettersPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "newsletters.html", map[string]any{"Title": "Newsletter", "List": list})
 }
 
-// newsletterNew renders the compose form.
+// newsletterNew renders the compose form; recent posts from the blog feed
+// (best-effort) become a dropdown so drafts need zero typing.
 func (h *Handler) newsletterNew(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "newsletter_new.html", map[string]any{"Title": "新建 Newsletter"})
+	h.render(w, "newsletter_new.html", map[string]any{"Title": "新建 Newsletter", "Posts": h.blogPosts()})
 }
 
 // newsletterCreate renders markdown with goldmark and stores the draft.

@@ -142,3 +142,12 @@ func displayName(from string) string {
 	}
 	return ""
 }
+
+// originOf returns scheme://host of rawurl, or "" when unparseable.
+func originOf(rawurl string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}

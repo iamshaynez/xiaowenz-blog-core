@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
@@ -50,6 +51,15 @@ type Handler struct {
 	// importHostSuffix 是 CORE_SITE_URL 派生的域名后缀（SSRF 白名单）；空 = 功能关闭。
 	importHostSuffix string
 	importClient     *http.Client
+
+	// 博客文章源联动（SPEC §4）：feedURL/feedOrigin 派生自 CORE_SITE_URL；
+	// posts 缓存 feedTTL，拉取失败降级为手动 URL 输入。
+	feedURL    string
+	feedOrigin string
+	feedClient *http.Client
+	mu         sync.Mutex
+	posts      []feedPost
+	fetchedAt  time.Time
 }
 
 const sessionCookieName = "core_session"
@@ -71,6 +81,9 @@ func NewHandler(d Deps) *Handler {
 		loginLimit:       ratelimit.New(5, time.Minute),
 		importHostSuffix: siteHostSuffix(d.Config.SiteURL),
 		importClient:     &http.Client{Timeout: 10 * time.Second},
+		feedURL:          strings.TrimRight(d.Config.SiteURL, "/") + "/feed.xml",
+		feedOrigin:       originOf(d.Config.SiteURL),
+		feedClient:       &http.Client{Timeout: 5 * time.Second},
 		maxUpload:        maxUploadBytes,
 	}
 }
