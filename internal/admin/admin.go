@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/backup"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/newsletter"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/ratelimit"
@@ -28,19 +29,24 @@ import (
 type Deps struct {
 	Store  *store.Store
 	Config *config.Config
-	S3     s3store.Client // nil when R2 is unconfigured
 	Sender *newsletter.Sender
-	Logger *slog.Logger
+	// MediaClient builds the media-upload client (nil = uploads disabled);
+	// settings-backed so console config (env fallback) applies per request.
+	MediaClient func() s3store.Client
+	// Backups drives the backup console; nil = page shows the disabled state.
+	Backups *backup.Backer
+	Logger  *slog.Logger
 }
 
 // Handler is the admin console root.
 type Handler struct {
-	store  *store.Store
-	cfg    *config.Config
-	s3     s3store.Client
-	sender *newsletter.Sender
-	log    *slog.Logger
-	secure bool
+	store       *store.Store
+	cfg         *config.Config
+	mediaClient func() s3store.Client
+	backups     *backup.Backer
+	sender      *newsletter.Sender
+	log         *slog.Logger
+	secure      bool
 
 	// loginLimit throttles /admin/login to 5 attempts/min/IP.
 	loginLimit *ratelimit.Limiter
@@ -81,7 +87,8 @@ func NewHandler(d Deps) *Handler {
 	return &Handler{
 		store:            d.Store,
 		cfg:              d.Config,
-		s3:               d.S3,
+		mediaClient:      d.MediaClient,
+		backups:          d.Backups,
 		sender:           d.Sender,
 		log:              log,
 		secure:           d.Config.IsProd(),
@@ -124,6 +131,13 @@ func (h *Handler) Routes() http.Handler {
 	guarded.HandleFunc("GET /admin/media", h.mediaPage)
 	guarded.HandleFunc("GET /admin/distribution", h.distributionPage)
 	guarded.HandleFunc("POST /admin/distribution/settings", h.distributionSettings)
+	guarded.HandleFunc("GET /admin/settings", h.settingsPage)
+	guarded.HandleFunc("POST /admin/settings/media", h.mediaConfigSave)
+	guarded.HandleFunc("POST /admin/settings/backup", h.backupConfigSave)
+	guarded.HandleFunc("GET /admin/backup", h.backupPage)
+	guarded.HandleFunc("POST /admin/backup/run", h.backupRun)
+	guarded.HandleFunc("POST /admin/backup/schedule", h.backupSchedule)
+	guarded.HandleFunc("POST /admin/backup/test", h.backupTest)
 	guarded.HandleFunc("POST /admin/media", h.mediaUpload)
 	guarded.HandleFunc("GET /admin/stats", h.statsJSON)
 	guarded.HandleFunc("GET /admin/stats/html", h.statsPage)

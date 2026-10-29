@@ -14,7 +14,8 @@ A self-hosted companion service that gives a static site (Hugo, Astro, Jekyll �
 - 🎙️ **Podcast analytics** — download counting via a Podtrac-style 302 redirect endpoint, same-day dedupe per listener
 - 🖼️ **Media hosting** — admin uploads straight to Cloudflare R2 (zero egress fees)
 - 📊 **Privacy-friendly stats** — page views without cookies; IPs are only stored as daily-rotated SHA-256 hashes
-- 💾 **Zero-ops persistence** — embedded SQLite (WAL) with automatic migrations and daily snapshots to R2
+- ⚙️ **Console-managed storage** — media & backup R2 targets configured on the admin「系统参数」page (settings-first, `CORE_R2_*` env as per-field fallback for media); uploads and backups rebuild their clients per operation, so changes apply without a restart
+- 💾 **Zero-ops persistence** — embedded SQLite (WAL) with automatic migrations and scheduled backups to a private R2 bucket (cron editable in the console; last 7 kept; manual run + connection test)
 
 Single binary, single container, single volume. No framework, no CGO, no external database.
 
@@ -33,7 +34,7 @@ static site (Hugo/Pages) ──JS──▶ xiaowenz-blog-core (Go, single binary
                                   ├─ /admin  server-rendered console
                                   ├─ SQLite (WAL, goose migrations) on /data volume
                                   ├─ SMTP (465/587) for all outbound mail
-                                  └─ daily snapshot backup → R2 (30-day retention)
+                                  └─ cron-scheduled backup → private R2 bucket (7 kept)
 ```
 
 - Go 1.26, stdlib `net/http` only (ServeMux pattern routing) — no web framework
@@ -81,8 +82,7 @@ Everything is an environment variable ([.env.example](.env.example)):
 | `CORE_ADMIN_TOKEN` | empty | Admin password; empty = admin login disabled |
 | `CORE_SMTP_HOST/PORT/USER/PASS` | — | Outbound mail. 465 = TLS, 587 = STARTTLS. Empty = dev log mailer |
 | `CORE_SMTP_FROM` | — | Sender, e.g. `My Blog <letter@example.com>`; also receives comment notifications |
-| `CORE_R2_ENDPOINT/KEY_ID/SECRET/BUCKET` | — | Cloudflare R2 (S3 API); empty disables uploads & backups with a warning |
-| `CORE_R2_PUBLIC_BASE` | — | Public URL prefix of the bucket, e.g. `https://media.example.com` |
+| `CORE_R2_ENDPOINT/KEY_ID/SECRET/BUCKET/PUBLIC_BASE` | — | Media-bucket fallback only: the admin console「系统参数」page (settings table) wins field by field; backup R2 is console-only. Incomplete effective media config disables uploads with a warning |
 | `CORE_TURNSTILE_SECRET` | — | Cloudflare Turnstile; empty = dev skip with warning |
 | `CORE_TRUSTED_PROXIES` | empty | CIDRs whose `X-Forwarded-For` is trusted. Empty = never trust XFF |
 | `CORE_ENV` | `dev` | `prod` enforces required vars + Secure cookies |

@@ -21,6 +21,19 @@ var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 		}
 		return time.Unix(unix, 0).UTC().Format("2006-01-02 15:04")
 	},
+	"backupWhen": func(t time.Time) string { return t.Format("2006-01-02 15:04:05") },
+	// sourceBadge labels where a settings field's effective value comes from:
+	// console database first, environment fallback second (sysconfig rule).
+	"sourceBadge": func(db, env string) template.HTML {
+		switch {
+		case db != "":
+			return ` <span class="badge ok">数据库</span>`
+		case env != "":
+			return ` <span class="badge pending">环境变量</span>`
+		default:
+			return ` <span class="badge bad">未设置</span>`
+		}
+	},
 	"fmtBytes": func(n int64) string {
 		switch {
 		case n >= 1<<20:

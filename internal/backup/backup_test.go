@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -36,7 +35,8 @@ func TestRunOnceUploadsValidSnapshot(t *testing.T) {
 	}
 
 	fake := s3store.NewFake("https://media.test")
-	b := New(d, fake, slog.New(slog.DiscardHandler))
+	b := New(d, slog.New(slog.DiscardHandler))
+	b.Client = func() s3store.Client { return fake }
 	b.now = func() time.Time { return time.Date(2026, 9, 19, 14, 30, 0, 0, time.UTC) }
 
 	key, err := b.RunOnce(context.Background())
@@ -70,86 +70,14 @@ func TestRunOnceUploadsValidSnapshot(t *testing.T) {
 	}
 }
 
-func TestRunOncePrunesOldBackups(t *testing.T) {
-	d := newBackupDB(t)
-	fake := s3store.NewFake("https://media.test")
-	ctx := context.Background()
-
-	// Seed remote backups: two older than 30 days, one recent.
-	for _, k := range []string{"backups/core-20260701-000000.db", "backups/core-20260801-000000.db", "backups/core-20260910-000000.db"} {
-		if _, err := fake.Put(ctx, k, strings.NewReader("x"), 1, "application/octet-stream"); err != nil {
-			t.Fatalf("seed: %v", err)
-		}
-	}
-
-	b := New(d, fake, slog.New(slog.DiscardHandler))
-	b.now = func() time.Time { return time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC) }
-
-	if _, err := b.RunOnce(ctx); err != nil {
-		t.Fatalf("RunOnce: %v", err)
-	}
-	keys, err := fake.ListKeys(ctx, "backups/")
-	if err != nil {
-		t.Fatalf("ListKeys: %v", err)
-	}
-	for _, k := range keys {
-		if strings.Contains(k, "20260701") || strings.Contains(k, "20260801") {
-			t.Errorf("old backup %q not pruned", k)
-		}
-	}
-	foundRecent := false
-	for _, k := range keys {
-		if strings.Contains(k, "20260910") {
-			foundRecent = true
-		}
-	}
-	if !foundRecent {
-		t.Error("recent backup wrongly pruned")
-	}
-	// Plus the new backup itself.
-	if len(keys) != 2 {
-		t.Errorf("keys = %v, want recent + new", keys)
-	}
-}
-
 func TestRunOnceSkippedWithoutR2(t *testing.T) {
 	d := newBackupDB(t)
-	b := New(d, nil, slog.New(slog.DiscardHandler))
+	b := New(d, slog.New(slog.DiscardHandler))
 	key, err := b.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce without S3 must not error, got %v", err)
 	}
 	if key != "" {
 		t.Errorf("key = %q, want empty when skipped", key)
-	}
-}
-
-func TestTickerRunsAndStops(t *testing.T) {
-	d := newBackupDB(t)
-	fake := s3store.NewFake("https://media.test")
-	b := New(d, fake, slog.New(slog.DiscardHandler))
-	b.Interval = 30 * time.Millisecond
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { b.Start(ctx); close(done) }()
-
-	deadline := time.After(3 * time.Second)
-	for {
-		keys, _ := fake.ListKeys(context.Background(), "backups/")
-		if len(keys) > 0 {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("ticker never ran a backup")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Start did not stop after cancel")
 	}
 }
