@@ -13,6 +13,28 @@
     <p style="color:#b45309;">R2 未配置：上传功能禁用（设置 CORE_R2_* 后启用）。</p>
     {{end}}
   </div>
+  {{with .Podcast}}
+  <div class="card" style="margin-top:16px;">
+    <h2>播客对账（音频 ↔ 剧集）</h2>
+    {{if not .FeedOK}}<p style="color:#b45309;">播客 feed 暂时拉不到，对账不可用（不影响上传）。</p>
+    {{else if .Missing}}<p style="color:#b91c1c;">⚠ 有剧集指向未上传的音频，enclosure 会 404：</p>
+    <ul>{{range .Missing}}<li>{{.Title}}</li>{{end}}</ul>
+    {{end}}
+    {{if .Rows}}
+    <table>
+      <tr><th>剧集 slug</th><th>音频大小</th><th>状态</th><th>frontmatter 片段</th></tr>
+      {{range .Rows}}
+      <tr>
+        <td>{{.Slug}}</td>
+        <td>{{fmtBytes .Bytes}}</td>
+        <td>{{if .Live}}已上线{{else}}<b>未上线</b>（剧集 md 还没发）{{end}}</td>
+        <td>{{if .Snippet}}<details><summary>复制片段</summary><pre>{{.Snippet}}</pre></details>{{else}}—{{end}}</td>
+      </tr>
+      {{end}}
+    </table>
+    {{end}}
+  </div>
+  {{end}}
   <table>
     <tr><th>Key</th><th>类型</th><th>大小</th><th>上传时间</th><th>URL</th></tr>
     {{range .Media}}

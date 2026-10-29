@@ -27,6 +27,7 @@ type feedPost struct {
 	Title string
 	Date  string // YYYY-MM-DD，可读展示用
 	URL   string // 已改写为 feedOrigin 的文章链接
+	Slug  string // URL 末段（剧集/文章 slug），对账用
 }
 
 var (
@@ -53,10 +54,41 @@ func (h *Handler) blogPosts() []feedPost {
 }
 
 func (h *Handler) fetchBlogPosts() []feedPost {
-	if h.feedURL == "" || h.feedOrigin == "" {
+	return h.fetchFeedPosts(h.feedURL)
+}
+
+// audioFeedPosts returns the cached podcast-feed episode list; ok=false when
+// the feed is unreachable (stale cache still counts as ok).
+func (h *Handler) audioFeedPosts() ([]feedPost, bool) {
+	h.mu.Lock()
+	if h.audioPosts != nil && time.Since(h.audioFetchedAt) < feedTTL {
+		posts := h.audioPosts
+		h.mu.Unlock()
+		return posts, true
+	}
+	h.mu.Unlock()
+	posts := h.fetchFeedPosts(h.audioFeedURL)
+	if posts == nil {
+		h.mu.Lock()
+		stale := h.audioPosts
+		h.mu.Unlock()
+		if stale != nil {
+			return stale, true
+		}
+		return nil, false
+	}
+	h.mu.Lock()
+	h.audioPosts, h.audioFetchedAt = posts, time.Now()
+	h.mu.Unlock()
+	return posts, true
+}
+
+// fetchFeedPosts fetches and parses one RSS feed; any failure yields nil.
+func (h *Handler) fetchFeedPosts(feedURL string) []feedPost {
+	if feedURL == "" || h.feedOrigin == "" {
 		return nil
 	}
-	resp, err := h.feedClient.Get(h.feedURL)
+	resp, err := h.feedClient.Get(feedURL)
 	if err != nil {
 		h.log.Warn("blog feed fetch", "err", err)
 		return nil
@@ -92,7 +124,11 @@ func (h *Handler) fetchBlogPosts() []feedPost {
 				date = t.Local().Format("2006-01-02")
 			}
 		}
-		posts = append(posts, feedPost{Title: title, Date: date, URL: link})
+		slug := strings.Trim(u.Path, "/")
+		if i := strings.LastIndex(slug, "/"); i >= 0 {
+			slug = slug[i+1:]
+		}
+		posts = append(posts, feedPost{Title: title, Date: date, URL: link, Slug: slug})
 	}
 	if len(posts) == 0 {
 		return nil

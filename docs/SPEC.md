@@ -70,6 +70,7 @@
 
 - `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量。
 - Newsletter 从文章导入：`POST /admin/newsletters/import`（表单 `url`）→ 抓取已公网上线的博客文章，标题进主题、`og:description`/`meta description` 进导语、原文链接进正文，直接落 **draft**（绝不自动发送）。URL 的 host 必须落在 `CORE_SITE_URL` 派生的域名后缀内（如 `blog.xiaowenz.com` → 允许 `xiaowenz.com` 与 `*.xiaowenz.com`），站外一律 400（SSRF 防线）；抓取 10s 超时、正文上限 1 MiB、非 200 → 502。
+- 播客对账：`GET /admin/media` 拉取 `{CORE_SITE_URL}/feed/audio.xml` 与媒体库 `audio/*` 互相勾稽，逐集回答：**已上线**（音频已传且 feed 有对应剧集）/ **未上线**（音频已传、剧集 md 未发——附可复制的剧集 frontmatter 片段，`audio_slug`/`audio_bytes` 与媒体库真实值对齐）/ **缺音频**（feed 剧集指向未上传的音频，enclosure 会 404，红牌警示）。feed 拉不到时对账区标注不可用，页面不 500；缓存口径同博客文章源（10 分钟）。
 - 博客文章源联动：`GET /admin/newsletters/new` 顺带拉取 `{CORE_SITE_URL}/feed.xml`（派生自既有配置，不新增 env），最近文章（≤30 条，含博客与播客条目）渲染成下拉列表，选中提交即走上述 import——全程零手动输入。feed 文章链接的主机统一改写为 feed 实际来源源（Hugo feed 内是 baseURL 绝对地址，apex 切换前点 canonical 会 404）。feed 内存缓存 10 分钟；拉取失败页面照常渲染，手动粘 URL 永远是兜底。
 - 订阅名单：`GET /admin/subscribers?status=&q=`（分页 50）；`POST /admin/subscribers/import`（CSV 上传，列=email[,confirmed]，重复跳过，导入即 active 并记 confirmed_at；**导入不进验证流程**——名单来自旧平台已验证用户）；`GET /admin/subscribers/export`（CSV；公式注入中和：以 `=`/`+`/`-`/`@`/tab/CR 开头的单元格前缀单引号）；`POST /admin/subscribers/{id}/delete`。
 - 评论审核：`GET /admin/comments?status=pending`；`POST /admin/comments/{id}/approve|reject`。

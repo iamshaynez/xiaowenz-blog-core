@@ -60,6 +60,10 @@ type Handler struct {
 	mu         sync.Mutex
 	posts      []feedPost
 	fetchedAt  time.Time
+
+	audioFeedURL   string
+	audioPosts     []feedPost
+	audioFetchedAt time.Time
 }
 
 const sessionCookieName = "core_session"
@@ -82,6 +86,7 @@ func NewHandler(d Deps) *Handler {
 		importHostSuffix: siteHostSuffix(d.Config.SiteURL),
 		importClient:     &http.Client{Timeout: 10 * time.Second},
 		feedURL:          strings.TrimRight(d.Config.SiteURL, "/") + "/feed.xml",
+		audioFeedURL:     strings.TrimRight(d.Config.SiteURL, "/") + "/feed/audio.xml",
 		feedOrigin:       originOf(d.Config.SiteURL),
 		feedClient:       &http.Client{Timeout: 5 * time.Second},
 		maxUpload:        maxUploadBytes,

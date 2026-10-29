@@ -180,5 +180,6 @@ func (h *Handler) mediaPage(w http.ResponseWriter, r *http.Request) {
 	}
 	h.render(w, "media.html", map[string]any{
 		"Title": "媒体库", "Media": media, "R2": h.s3 != nil,
+		"Podcast": h.podcastCoherenceFor(media),
 	})
 }
