@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Full-codebase review pass (architecture, quality, bugs). All changes test-first.
 
+### Added (CI auto-deploy)
+
+- **push main → gb-test 自动构建部署**（sanguo / novel-universe 同构）：CI 新增
+  deploy job（go + docker 双 job 全绿后触发，`concurrency: deploy-main` 排队不
+  取消），经受限 SSH 密钥把 commit sha 传给服务器上的 `build.sh`——服务器侧
+  拉源码 → docker build（sha + main 双标签）→ 推阿里云 ACR → `deploy.sh`
+  （pull 幂等 + compose up + `/healthz` 冒烟，失败 dump 日志打红 CI）。
+  authorized_keys 强制命令锁死密钥（sha 只认 40 位十六进制），主机指纹
+  DEPLOY_KNOWN_HOSTS 钉死；secrets 仅 4 个（DEPLOY_*），CI 不接触 ACR 凭据。
+  服务器脚本版本化副本在 `docker/`（build-remote.sh / deploy-remote.sh /
+  docker-compose.yml / 服务器初始化.md——改动两处同步）。一次性迁移已完成：
+  手工 docker run 容器由 compose 接管（bind mount / env / apps 网络 / 18092
+  端口逐项对齐，数据不丢；旧本地镜像 xiaowenz-core:latest 留作回滚）。
+
 ### Added (console-managed system parameters + backup scheduling)
 
 - **Dedicated「系统参数」(system settings) admin page** (`internal/sysconfig`):
