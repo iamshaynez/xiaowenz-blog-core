@@ -1,0 +1,23 @@
+# gb-test 服务器 /opt/apps/core/docker-compose.yml 的版本化副本——改动两处同步。
+# 服务器布局：/opt/apps/core/{docker-compose.yml, build.sh, deploy.sh,
+#   env(CORE_* 环境变量含机密,600,勿入库勿回显), .env(仅 ACR_REGISTRY), data/, src/}
+# 镜像来自阿里云 ACR（与 sanguo / novel-universe 同实例，命名空间 xiaowenz）。
+# 由 2026-10-30 前的手工 docker run 容器迁来：bind mount / ports / apps 网络 /
+# env_file 与原容器逐项对齐（迁移时已核对容器 env 键 == env 文件键）。
+# 接入层：openresty 反代 core.xiaowenz.com → 容器名 xiaowenz-core:8080，经共享
+# apps 网络；本机 18092 回环端口留作 deploy.sh 冒烟与运维后门。
+# 数据：./data bind mount → /data（SQLite core.db + WAL），重建容器不丢。
+services:
+  core:
+    image: ${ACR_REGISTRY}/xiaowenz/core:main
+    container_name: xiaowenz-core
+    restart: unless-stopped
+    env_file: env
+    ports:
+      - "127.0.0.1:18092:8080"   # 只绑回环：对外一律走 openresty/CF
+    volumes:
+      - ./data:/data
+networks:
+  default:
+    name: apps
+    external: true
