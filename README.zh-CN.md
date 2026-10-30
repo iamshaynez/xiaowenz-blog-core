@@ -22,7 +22,7 @@ internal/
   turnstile/         Cloudflare Turnstile 校验（HTTP / Fake / Noop）
   ratelimit/         内存 per-IP 令牌桶（定期清理）
   newsletter/        群发 worker（后台 goroutine，限速，send_log，状态机）
-  backup/            24h ticker：wal_checkpoint → VACUUM INTO → S3 → 30 天裁剪
+  backup/            cron 调度（管理台可改）：wal_checkpoint → VACUUM INTO → 私有桶 → 保留最近 7 份
   admin/             服务端渲染管理台（html/template，无 JS 框架）
 ```
 
@@ -39,8 +39,7 @@ internal/
 | `CORE_SMTP_PORT` | `587` | 465 = 直连 TLS；587/其他 = STARTTLS（对端支持时升级） |
 | `CORE_SMTP_USER` / `CORE_SMTP_PASS` | 空 | SMTP 凭据（服务端仅在对方通告 AUTH 时登录） |
 | `CORE_SMTP_FROM` | 空 | 发件人，如 `三杯过后 <letter@example.com>`；**其地址同时作为评论审核通知的收件人**（SPEC 未定义单独的 admin 邮箱，保守选择，见「偏离说明」） |
-| `CORE_R2_ENDPOINT` / `CORE_R2_KEY_ID` / `CORE_R2_SECRET` / `CORE_R2_BUCKET` | 空 | Cloudflare R2 S3 API；任一为空则媒体上传与备份禁用并 WARN |
-| `CORE_R2_PUBLIC_BASE` | 空 | 对象公开地址前缀，如 `https://media.example.com` |
+| `CORE_R2_ENDPOINT` / `CORE_R2_KEY_ID` / `CORE_R2_SECRET` / `CORE_R2_BUCKET` / `CORE_R2_PUBLIC_BASE` | 空 | **媒体桶的环境变量兜底**：管理台「系统参数」页（settings 表）逐字段优先；备份 R2 仅认后台配置。有效媒体配置不完整则上传禁用并 WARN |
 | `CORE_TURNSTILE_SECRET` | 空 | 空 = dev 模式跳过校验并 WARN |
 | `CORE_TRUSTED_PROXIES` | 空 | 可信反代列表（逗号分隔 CIDR/IP，如 `10.0.0.0/8,1.2.3.4`）；仅这些对端的 `X-Forwarded-For` 会被采信。**空 = 永不采信 XFF**，客户端 IP 一律取对端地址（防伪造绕过限流） |
 | `CORE_ENV` | `dev` | `prod` 时 cookie Secure + 启动强校验 |
@@ -109,7 +108,7 @@ curl localhost:8080/healthz    # {"db":true,"ok":true}
 3. **域名**：绑定 `core.<你的域名>` 到服务 8080 端口；静态站把 API base 指向它。
 4. **对接 Hugo 站**：配置项、前端 JS 契约、播客 302 计数与验收清单见 [docs/HUGO.md](docs/HUGO.md)。
 4. Dockerfile 即交付物：多阶段构建（`golang:1.26-alpine` → `alpine`）、非 root 运行、`VOLUME /data`、`EXPOSE 8080`、`HEALTHCHECK /healthz`。CI 会执行 `docker build` 兜底。
-5. 备份：进程内每 24h 自动快照到 R2 `backups/`，保留 30 天（R2 未配置则跳过）。
+5. 备份：cron 定时快照（默认每天 04:00 UTC，「备份」页可改、即时生效）到私有桶 `backups/`，保留最近 7 份；R2 目标（endpoint/密钥/桶名）在「系统参数」页配置，可手动触发、可一键测试 R2 连通。
 
 ## 安全与隐私要点
 
@@ -125,7 +124,8 @@ curl localhost:8080/healthz    # {"db":true,"ok":true}
 2. **PV 接口无 Turnstile/蜜罐**：SPEC §3.3 明确定义 `/api/pv` 只有 `{path, referrer}` + DNT + 限流（逐页打点无法做挑战验证）；三件套按订阅/评论执行（AGENTS.md §4.3 已同口径豁免）。
 3. **CSV 导入的 `confirmed` 列**：按 SPEC 加粗条款「导入即 active」，该列仅作旧平台导出格式兼容读取，不改变行为。
 4. **`/a/{slug}.mp3` 路由**：Go ServeMux 通配符须占整段路径，故注册 `GET /a/` 后在 handler 内解析 slug（非 `.mp3` 后缀一律 404）。
-5. **备份时机**：24h ticker 之外，启动时立即跑一次（部署后崩溃也留有新快照）；prune 失败只 WARN 不影响备份本体。
+5. **备份时机**：cron 之外，启动时立即跑一次（部署后崩溃也留有新快照）；手动与定时互斥（忙时明确提示）；prune 失败只 WARN 不影响备份本体；每份快照配 `.meta.json` 配置摘要（机密只记布尔，不落值）。
+6. **系统参数与凭据安全**：媒体与备份两套 R2 配置都在管理台「系统参数」页维护（媒体逐字段回退 `CORE_R2_*` 环境变量，后台填写即覆盖）；Access Key 存于本服务数据库（settings 表，明文、页面不回显、留空保持不变），因此随数据库备份一起入桶——**备份桶必须保持私有**（不绑公网域名），且建议使用仅授权该桶的 R2 API Token。媒体凭据入库后同样随备份入桶，桶私有的纪律同样适用。
 6. **dev 邮件**：SMTP 未配置时使用 LogMailer（日志输出全文并返回成功）——冒烟测试「从日志拿 token」依赖此行为；prod 模式 SMTP 为必填，不会静默降级。
 7. **客户端 IP**：默认取 TCP 对端地址；仅当对端命中 `CORE_TRUSTED_PROXIES`（逗号分隔 CIDR/IP，默认空 = 不信任任何 XFF）时才采信 `X-Forwarded-For` 首值。部署在 Zeabur/Cloudflare 后时把平台出口网段配进来。
 

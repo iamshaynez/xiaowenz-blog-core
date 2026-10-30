@@ -14,7 +14,7 @@ import (
 // (http.MaxBytesReader) is identical.
 func TestMediaUploadOversizedRejected(t *testing.T) {
 	fx := newAdminFixture(t)
-	h := NewHandler(Deps{Store: fx.store, Config: fx.cfg, S3: fx.s3, Sender: fx.sender,
+	h := NewHandler(Deps{Store: fx.store, Config: fx.cfg, MediaClient: fx.mediaClient, Sender: fx.sender,
 		Logger: slog.New(slog.DiscardHandler)})
 	h.maxUpload = 16 // bytes
 	handler := h.Routes()

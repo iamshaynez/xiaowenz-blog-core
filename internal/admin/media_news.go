@@ -116,7 +116,8 @@ const maxUploadBytes = 100 << 20 // 100MB per SPEC §4
 // mediaUpload accepts a multipart file, pushes it to R2 under images/ or
 // audio/ (mime whitelist), records the media row, returns {url,bytes,key}.
 func (h *Handler) mediaUpload(w http.ResponseWriter, r *http.Request) {
-	if h.s3 == nil {
+	client := h.mediaClient
+	if client == nil {
 		h.log.Warn("media upload rejected: R2 not configured")
 		writeErr(w, http.StatusServiceUnavailable, "media storage not configured")
 		return
@@ -158,7 +159,7 @@ func (h *Handler) mediaUpload(w http.ResponseWriter, r *http.Request) {
 		key = prefix + strings.TrimSuffix(filename, ext) + "-" + suffix + ext
 	}
 
-	url, err := h.s3.Put(r.Context(), key, file, header.Size, contentType)
+	url, err := client().Put(r.Context(), key, file, header.Size, contentType)
 	if err != nil {
 		h.log.Error("s3 put", "err", err, "key", key)
 		writeErr(w, http.StatusBadGateway, "upload failed")
@@ -204,7 +205,7 @@ func (h *Handler) mediaPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "media.html", map[string]any{
-		"Title": "媒体库", "Media": media, "R2": h.s3 != nil,
+		"Title": "媒体库", "Media": media, "R2": h.mediaClient != nil && h.mediaClient() != nil,
 		"Podcast": h.podcastCoherenceFor(media),
 	})
 }

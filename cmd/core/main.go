@@ -20,6 +20,7 @@ import (
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/newsletter"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/s3store"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/sysconfig"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/turnstile"
 )
 
@@ -87,17 +88,70 @@ func run(cfg *config.Config, log *slog.Logger) error {
 		v = turnstile.Noop{}
 	}
 
-	// R2: media upload + backup degrade gracefully without it.
-	var s3c s3store.Client
-	if cfg.R2Configured() {
-		s3c = s3store.NewR2(cfg.R2Endpoint, cfg.R2KeyID, cfg.R2Secret, cfg.R2Bucket, cfg.R2PublicBase)
-	} else {
-		log.Warn("CORE_R2_* not set: media upload and backups disabled")
+	// R2 targets are console-managed (settings table, admin「系统参数」page):
+	// media falls back field-by-field to CORE_R2_* env so existing deployments
+	// keep working until the operator moves values into the console; backup
+	// has no env fallback (env points at the public media bucket). Clients
+	// are rebuilt per operation — console edits apply without a restart.
+	envMedia := sysconfig.MediaR2{
+		Endpoint:   cfg.R2Endpoint,
+		KeyID:      cfg.R2KeyID,
+		Secret:     cfg.R2Secret,
+		Bucket:     cfg.R2Bucket,
+		PublicBase: cfg.R2PublicBase,
+	}
+	mediaClient := sysconfig.MediaClientFactory(st, envMedia, func(c sysconfig.MediaR2) s3store.Client {
+		return s3store.NewR2(c.Endpoint, c.KeyID, c.Secret, c.Bucket, c.PublicBase)
+	})
+
+	// Backups: cron schedule and R2 target both come from the settings table
+	// (admin console「备份」page); the client is rebuilt per operation, so
+	// console edits apply without a restart.
+	backer := backup.New(d, log)
+	backer.Client = sysconfig.BackupClientFactory(st, func(c sysconfig.BackupR2) s3store.Client {
+		return s3store.NewR2(c.Endpoint, c.KeyID, c.Secret, c.Bucket, "")
+	})
+	backer.GetCron = func() string {
+		v, _ := st.GetSetting(backup.SettingKey)
+		return v
+	}
+	backer.Meta = func() map[string]any {
+		dbMedia, _ := sysconfig.LoadMediaR2(st)
+		eff := sysconfig.EffectiveMediaR2(dbMedia, envMedia)
+		r2Backup, _ := sysconfig.LoadBackupR2(st)
+		return map[string]any{
+			"env":      cfg.Env,
+			"base_url": cfg.BaseURL,
+			"site_url": cfg.SiteURL,
+			"addr":     cfg.Addr,
+			// Secrets never leave the process: presence flags only.
+			"smtp_configured":      cfg.SMTPHost != "",
+			"turnstile_enabled":    cfg.TurnstileEnabled(),
+			"r2_media_bucket":      eff.Bucket,
+			"media_public_base":    eff.PublicBase,
+			"r2_backup_configured": r2Backup.Complete(),
+			"r2_backup_bucket":     r2Backup.Bucket,
+			"send_interval_ms":     cfg.SendInterval.Milliseconds(),
+			"mailing_address":      cfg.MailingAddress,
+		}
+	}
+	if dbMedia, err := sysconfig.LoadMediaR2(st); err == nil {
+		if eff := sysconfig.EffectiveMediaR2(dbMedia, envMedia); !eff.Complete() {
+			log.Warn("media R2 incomplete (console + env): media upload disabled")
+		} else if dbMedia.Complete() {
+			log.Info("media R2 active from console settings", "bucket", eff.Bucket)
+		} else {
+			log.Info("media R2 active from environment fallback", "bucket", eff.Bucket,
+				"hint", "configure in admin console to override")
+		}
+	}
+	if !backer.Configured() {
+		log.Warn("backup R2 not configured in console: backups disabled until set in admin「系统参数」page")
 	}
 
 	sender := newsletter.NewSender(st, m, cfg, log)
 	api := httpapi.NewServer(httpapi.Deps{Store: st, Mailer: m, Verifier: v, Config: cfg, Logger: log})
-	adm := admin.NewHandler(admin.Deps{Store: st, Config: cfg, S3: s3c, Sender: sender, Logger: log})
+	adm := admin.NewHandler(admin.Deps{Store: st, Config: cfg, MediaClient: mediaClient, Sender: sender, Backups: backer, Logger: log})
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", api.Routes())
@@ -111,8 +165,8 @@ func run(cfg *config.Config, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Backup ticker (24h), stops with the process context.
-	go backup.New(d, s3c, log).Start(ctx)
+	// Backup scheduler (cron from settings), stops with the process context.
+	go backer.Start(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {

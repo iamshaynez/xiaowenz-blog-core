@@ -20,8 +20,7 @@
 | `CORE_ADMIN_TOKEN` | 空（空则 admin 拒绝登录） | 管理员口令 |
 | `CORE_SMTP_HOST/PORT/USER/PASS` | 空 | 发信；465=TLS，587=STARTTLS |
 | `CORE_SMTP_FROM` | 空 | 发件人，如 `三杯过后 <letter@xiaowenz.com>` |
-| `CORE_R2_ENDPOINT/KEY_ID/SECRET/BUCKET` | 空 | R2 S3 API；空则媒体上传与备份功能禁用并日志提示 |
-| `CORE_R2_PUBLIC_BASE` | 空 | 如 `https://media.xiaowenz.com` |
+| `CORE_R2_ENDPOINT/KEY_ID/SECRET/BUCKET/PUBLIC_BASE` | 空 | **媒体桶兜底**：管理台「系统参数」页（settings 表 `media_r2_*`）逐字段优先，环境变量仅补缺；有效配置不完整则媒体上传禁用。备份 R2（`backup_r2_*`）仅认后台配置，无环境变量回退 |
 | `CORE_TURNSTILE_SECRET` | 空 | 空 = dev 模式跳过校验并打 WARN |
 | `CORE_ENV` | `dev` | `prod` 时开启更严格行为（cookie Secure 等） |
 
@@ -94,7 +93,11 @@
 
 ## 6. 备份
 
-进程内 ticker（24h）：`PRAGMA wal_checkpoint(TRUNCATE)` → `VACUUM INTO` 临时文件 → 上传 R2 `backups/core-YYYYMMDD-HHMMSS.db` → 删除 30 天前的远端备份。R2 未配置则跳过并 WARN。备份完成打结构化日志。
+进程内 cron 调度（默认 `0 4 * * *`，管理台「备份」页可改、存 settings 表 `backup_cron`，保存即生效无需重启）：`PRAGMA wal_checkpoint(TRUNCATE)` → `VACUUM INTO` 临时文件 → 上传私有桶 `backups/core-YYYYMMDD-HHMMSS.db` + 同名 `.meta.json` 配置摘要（时间/schema 版本/非机密运行配置，机密只记"已配置"布尔，绝不落值）→ 按时间戳保留最近 7 份（db 与 meta 配对删除）。备份完成打结构化日志。
+
+两套 R2 目标统一在管理台「系统参数」页（`internal/sysconfig`）配置，存 settings 表：媒体 `media_r2_*`（公开桶，逐字段回退环境变量 `CORE_R2_*`）、备份 `backup_r2_*`（私有桶，无环境变量回退——环境变量指向公开媒体桶，快照绝不能落进去）。客户端按次重建，改动即时生效、无需重启；页面按字段显示生效来源（数据库/环境变量/未设置）。凭据为明文存储但页面永不回显（secret 留空=沿用旧值），且随数据库快照一起入桶——因此**备份桶必须私有**（不绑公网域名、不开放公开访问），建议使用仅授权该桶的 R2 API Token。配置不完整=对应功能禁用（WARN），绝不部分写入。
+
+管理台备份页：R2 配置表单、当前 cron/下次运行/历史列表，手动「立即备份」（与定时互斥，忙时返回提示），「测试 R2 连接」（对备份桶做写入→列举→删除探针回路）。启动时立即跑一次（部署后崩溃也留有新快照）；prune 失败只 WARN 不影响备份本体。
 
 ## 7. 运维交付物
 
