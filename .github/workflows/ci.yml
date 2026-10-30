@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   go:
@@ -27,3 +28,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build .
+
+  # push main（go + docker 双 job 全绿后）→ 受限 SSH 把 commit sha 传给 gb-test
+  # 上的 build.sh（authorized_keys 强制命令锁定；sha 只认 40 位十六进制）——
+  # 服务器侧完成 拉源码 → docker build → 推 ACR → deploy.sh（pull + up + 冒烟）。
+  # 构建推送放服务器侧的原因：GitHub 美国 runner 推 ACR(cn-heyuan) 端点 blob
+  # 上传停滞（novel-universe 四连 30 分钟超时复现），服务器→ACR 实测秒级——
+  # 与 sanguo / novel-universe 同构。主机指纹以 DEPLOY_KNOWN_HOSTS 钉死防 MITM。
+  # 服务器脚本版本化副本：docker/build-remote.sh 与 docker/deploy-remote.sh
+  # ——改动两处同步。secrets 仅 4 个（DEPLOY_*），CI 不接触 ACR 凭据。
+  deploy:
+    name: deploy (gb-test)
+    runs-on: ubuntu-latest
+    needs: [go, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 部署不可并发：排队不取消，避免两轮 build/up 互相踩
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
+    timeout-minutes: 30
+    steps:
+      - name: 服务器侧构建推送并部署冒烟（受限密钥 + sha → build.sh）
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ] || [ -z "$DEPLOY_HOST" ]; then
+            echo "DEPLOY_* secrets 未配置（见 docker/服务器初始化.md）"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+          # 密钥在服务器侧被强制命令接管：远程命令即目标 sha（build.sh 经
+          # $SSH_ORIGINAL_COMMAND 读取并校验 40 位十六进制，其余一律拒绝）
+          ssh -F /dev/null -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "$GITHUB_SHA"
