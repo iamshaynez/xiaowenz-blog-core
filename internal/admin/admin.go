@@ -76,7 +76,10 @@ type Handler struct {
 }
 
 const sessionCookieName = "core_session"
-const sessionTTL = 24 * time.Hour
+
+// sessionTTL 控制登录态有效期（cookie Expires 与 HMAC 过期共用）。
+// 管理台是个人低频工具，长期免登录；服务端吊销靠轮换 CORE_ADMIN_TOKEN。
+const sessionTTL = 365 * 24 * time.Hour
 
 // NewHandler builds the admin Handler.
 func NewHandler(d Deps) *Handler {

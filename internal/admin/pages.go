@@ -245,10 +245,16 @@ func (h *Handler) statsJSON(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	days := 30
 	switch r.URL.Query().Get("days") {
+	case "1": // 24 小时快速窗口
+		days = 1
 	case "7":
 		days = 7
 	case "90":
 		days = 90
+	}
+	winLabel := fmt.Sprintf("%d 天", days)
+	if days == 1 {
+		winLabel = "24 小时"
 	}
 	now := time.Now()
 	since := now.Add(-time.Duration(days) * 24 * time.Hour)
@@ -275,47 +281,14 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ── 时间线（补零成连续序列）＋ 路径/来源维度 ──
-	sparse, err := h.store.PageviewTimeseries(since.Unix())
+	// 24 小时窗口切到小时粒度，否则柱子只有一两根。
+	cols, err := h.timelineCols(since, now, days)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	byDay := map[string]store.DayStat{}
-	maxPV := 0
-	for _, d := range sparse {
-		byDay[d.Day] = d
-		if d.PV > maxPV {
-			maxPV = d.PV
-		}
-	}
-	cols := make([]DayCol, 0, days+1)
-	labelEvery := days / 8
-	if labelEvery < 1 {
-		labelEvery = 1
-	}
-	for i := 0; i <= days; i++ {
-		day := since.AddDate(0, 0, i)
-		key := day.Format("2006-01-02")
-		d := byDay[key]
-		pvh, uvh := 0, 0
-		if maxPV > 0 {
-			pvh = d.PV * 100 / maxPV
-			uvh = d.UV * 100 / maxPV
-			if d.PV > 0 && pvh < 2 {
-				pvh = 2
-			}
-			if d.UV > 0 && uvh < 2 {
-				uvh = 2
-			}
-		}
-		label := ""
-		if i%labelEvery == 0 || i == days {
-			label = day.Format("01-02")
-		}
-		cols = append(cols, DayCol{Day: key, Label: label, PV: d.PV, UV: d.UV, PVH: pvh, UVH: uvh})
-	}
 
-	pathsRaw, err := h.store.PathStats(since.Unix(), 100)
+	pathsRaw, err := h.store.PathStats(since.Unix(), 20)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -348,17 +321,106 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "stats.html", map[string]any{
-		"Title": "统计", "PV30": pv, "UV30": uv, "Days": days,
+		"Title": "统计", "PV30": pv, "UV30": uv, "Days": days, "WinLabel": winLabel,
 		"ActiveSubs": active, "PendingComments": pending, "Downloads": downloads,
 		"Timeline": cols, "Paths": paths, "Referrers": refs,
 	})
 }
 
-// DayCol 是时间线的一列：日期、PV/UV 及其条高百分比、稀疏 x 轴标签。
+// timelineCols 补零成连续序列；days==1 用小时粒度（日粒度在 24 小时窗口
+// 只剩一两根柱子）。ShowNum 标记需要在柱顶标出 PV 数字的列。
+func (h *Handler) timelineCols(since, now time.Time, days int) ([]DayCol, error) {
+	heights := func(pv, uv, maxPV int) (int, int) {
+		if maxPV == 0 {
+			return 0, 0
+		}
+		pvh := pv * 100 / maxPV
+		uvh := uv * 100 / maxPV
+		if pv > 0 && pvh < 2 {
+			pvh = 2
+		}
+		if uv > 0 && uvh < 2 {
+			uvh = 2
+		}
+		return pvh, uvh
+	}
+
+	if days == 1 {
+		sparse, err := h.store.PageviewTimeseriesHourly(since.Unix())
+		if err != nil {
+			return nil, err
+		}
+		byHour := map[string]store.HourStat{}
+		maxPV := 0
+		for _, hv := range sparse {
+			byHour[hv.Hour] = hv
+			if hv.PV > maxPV {
+				maxPV = hv.PV
+			}
+		}
+		var cols []DayCol
+		for i := 0; ; i++ {
+			h0 := since.Truncate(time.Hour).Add(time.Duration(i) * time.Hour)
+			if h0.After(now) {
+				break
+			}
+			key := h0.Format("2006-01-02 15")
+			hv := byHour[key]
+			pvh, uvh := heights(hv.PV, hv.UV, maxPV)
+			label := ""
+			if i%3 == 0 {
+				label = h0.Format("15") + "时"
+			}
+			cols = append(cols, DayCol{
+				Day: key, Label: label, PV: hv.PV, UV: hv.UV, PVH: pvh, UVH: uvh,
+				ShowNum: hv.PV > 0,
+			})
+		}
+		return cols, nil
+	}
+
+	sparse, err := h.store.PageviewTimeseries(since.Unix())
+	if err != nil {
+		return nil, err
+	}
+	byDay := map[string]store.DayStat{}
+	maxPV := 0
+	for _, d := range sparse {
+		byDay[d.Day] = d
+		if d.PV > maxPV {
+			maxPV = d.PV
+		}
+	}
+	labelEvery := days / 8
+	if labelEvery < 1 {
+		labelEvery = 1
+	}
+	cols := make([]DayCol, 0, days+1)
+	for i := 0; i <= days; i++ {
+		day := since.AddDate(0, 0, i)
+		key := day.Format("2006-01-02")
+		d := byDay[key]
+		pvh, uvh := heights(d.PV, d.UV, maxPV)
+		label := ""
+		if i%labelEvery == 0 || i == days {
+			label = day.Format("01-02")
+		}
+		// 90 天窗口的柱宽只有十几像素，只在带刻度的列标数字，其余靠 title 提示。
+		showNum := d.PV > 0 && (days <= 30 || label != "")
+		cols = append(cols, DayCol{
+			Day: key, Label: label, PV: d.PV, UV: d.UV, PVH: pvh, UVH: uvh, ShowNum: showNum,
+		})
+	}
+	return cols, nil
+}
+
+// DayCol 是时间线的一列：日期（或小时）、PV/UV 及其条高百分比、稀疏 x 轴
+// 标签，以及是否在柱顶标出 PV 数字。
 type DayCol struct {
 	Day, Label string
 	PV, UV     int
 	PVH, UVH   int
+	ShowNum    bool
 }
 
 // PathRow / RefRow 是带占比与条宽的展示行。

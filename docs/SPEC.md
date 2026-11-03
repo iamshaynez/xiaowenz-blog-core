@@ -67,10 +67,10 @@
 
 管理台整体采用 editorial 设计语言（纸感底色/宋体标题/胶囊控件），页面骨架见 `internal/admin/templates/_layout.html`；仪表盘含下载量条形图与最近待审评论就地审核，评论/订阅页状态页签带实时计数，Newsletter 发送前展示收件人数并强制确认。（/admin，服务端渲染 html/template，无前端框架）
 
-认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（24h，HttpOnly/Secure/SameSite=Lax）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
+认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（365 天，HttpOnly/Secure/SameSite=Lax；管理台为个人低频工具，长期免重登录）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
 
 - `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量（条形图）与最近待审评论就地审核。
-- `GET /admin/stats/html?days=7|30|90` 流量分析台：总量卡、**日粒度浏览时间线**（PV/UV 双柱，零流量日补零）、**热门路径 TOP 100**（PV/UV/占比，前端检索）、**访问来源 TOP 20**（占比条；空 referrer 显示"直接访问"）、剧集下载量。日界按进程本地时区（部署侧 `TZ` 对齐受众时区，容器镜像含 tzdata）。
+- `GET /admin/stats/html?days=1|7|30|90` 流量分析台：总量卡、**浏览时间线**（PV/UV 双柱、零流量桶补零、柱顶标 PV 数字；days=1 时切小时粒度，其余日粒度）、**热门路径 TOP 20**（PV/UV/占比）、**访问来源 TOP 20**（占比条；空 referrer 显示"直接访问"）、剧集下载量；四档时间窗同时作用于概要卡、时间线与路径/来源榜。日界按进程本地时区（部署侧 `TZ` 对齐受众时区，容器镜像含 tzdata）。
 - Newsletter 删除：`POST /admin/newsletters/{id}/delete`（草稿/已发可删，**sending 在途拒删 409**；已发删除连带清理 send_log，事务内完成不留孤儿投递记录）。
 - Newsletter 从文章导入：`POST /admin/newsletters/import`（表单 `url`）→ 抓取已公网上线的博客文章，标题进主题、`og:description`/`meta description` 进导语、原文链接进正文，直接落 **draft**（绝不自动发送）。URL 的 host 必须落在 `CORE_SITE_URL` 派生的域名后缀内（如 `blog.xiaowenz.com` → 允许 `xiaowenz.com` 与 `*.xiaowenz.com`），站外一律 400（SSRF 防线）；抓取 10s 超时、正文上限 1 MiB、非 200 → 502。
 - 分发管理：`GET /admin/distribution`（媒体库入口）——feed 自检（enclosure 字节 ↔ 媒体库勾稽）、Apple 目录比对（iTunes 公开 lookup API：已收录最新一集、滞后天数、登记的 feed 域名哨兵）、小宇宙节目页配置与机制说明；平台配置（`apple_show_id`/`apple_country`/`xiaoyuzhou_url`）经 `POST /admin/distribution/settings` 存 settings 表。Apple 无可用 ping 端点，官方刷新路径是 Podcasts Connect 手动刷新；收录节奏 ≤24h。

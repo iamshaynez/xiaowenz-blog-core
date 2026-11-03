@@ -769,6 +769,34 @@ func (s *Store) PageviewTimeseries(since int64) ([]DayStat, error) {
 	return out, rows.Err()
 }
 
+// HourStat 是时间线上的一小时：PV、UV（同小时 ip_hash 去重）。
+type HourStat struct {
+	Hour string // YYYY-MM-DD HH（本地时区）
+	PV   int
+	UV   int
+}
+
+// PageviewTimeseriesHourly returns per-hour PV/UV since the unix timestamp.
+// 供 24 小时窗口的统计页使用（日粒度在该窗口只剩一两根柱子）。
+func (s *Store) PageviewTimeseriesHourly(since int64) ([]HourStat, error) {
+	rows, err := s.db.Query(
+		`SELECT strftime('%Y-%m-%d %H', created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
+		 FROM pageviews WHERE created_at>=? GROUP BY 1 ORDER BY 1`, since)
+	if err != nil {
+		return nil, fmt.Errorf("pageview timeseries hourly: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []HourStat
+	for rows.Next() {
+		var h HourStat
+		if err := rows.Scan(&h.Hour, &h.PV, &h.UV); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
 // PathStat 是单条路径的 PV/UV。
 type PathStat struct {
 	Path string

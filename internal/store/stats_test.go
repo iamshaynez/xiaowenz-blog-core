@@ -218,3 +218,36 @@ func TestReferrerStatsGrouped(t *testing.T) {
 		t.Errorf("refs[1] = %+v", refs[1])
 	}
 }
+
+// 24 小时窗口的统计页需要小时粒度时间线：日粒度在一窗口内只剩一两根柱子。
+func TestPageviewTimeseriesHourly(t *testing.T) {
+	s := newTestStore(t)
+	base := time.Date(2026, 11, 3, 10, 30, 0, 0, time.Local)
+
+	// 10 点两条（同 ip 去重）、11 点一条。
+	s.now = func() time.Time { return base }
+	if err := s.RecordPageview("/a", "", "h1", "ua"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordPageview("/a", "https://g.com", "h1", "ua"); err != nil {
+		t.Fatal(err)
+	}
+	s.now = func() time.Time { return base.Add(time.Hour) }
+	if err := s.RecordPageview("/b", "", "h2", "ua"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.PageviewTimeseriesHourly(base.Add(-time.Minute).Unix())
+	if err != nil {
+		t.Fatalf("PageviewTimeseriesHourly: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("buckets = %d, want 2（10 点、11 点）", len(got))
+	}
+	if got[0].Hour != base.Format("2006-01-02 15") || got[0].PV != 2 || got[0].UV != 1 {
+		t.Errorf("第一桶 = %+v，want {10点 PV2 UV1}", got[0])
+	}
+	if got[1].PV != 1 || got[1].UV != 1 {
+		t.Errorf("第二桶 = %+v，want PV1 UV1", got[1])
+	}
+}
