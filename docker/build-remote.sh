@@ -24,11 +24,15 @@ curl -fsSL "https://codeload.github.com/iamshaynez/xiaowenz-blog-core/tar.gz/${S
 tar xzf src/src.tar.gz -C src --strip-components=1
 
 echo "== 构建 $IMG:$SHA / :main =="
-( cd src && docker build -t "$IMG:$SHA" -t "$IMG:main" . ) || { echo "构建失败"; exit 1; }
+( cd src && docker build --provenance=false --sbom=false -t "$IMG:$SHA" -t "$IMG:main" . ) || { echo "构建失败"; exit 1; }
 
 echo "== 推送 ACR（服务器侧，国内路径） =="
-docker push "$IMG:$SHA" || { echo "推送 :$SHA 失败"; exit 1; }
-docker push "$IMG:main" || { echo "推送 :main 失败"; exit 1; }
+ok=0
+for i in 1 2 3; do docker push "$IMG:$SHA" && ok=1 && break; echo "push :$SHA 失败,第 $i 次重试(HK→ACR auth 偶发跨境重置)"; sleep 8; done
+[ "$ok" = 1 ] || { echo "推送 :$SHA 三连败"; exit 1; }
+ok=0
+for i in 1 2 3; do docker push "$IMG:main" && ok=1 && break; echo "push :main 失败,第 $i 次重试"; sleep 8; done
+[ "$ok" = 1 ] || { echo "推送 :main 三连败"; exit 1; }
 
 echo "== 部署并冒烟 =="
 exec /opt/apps/core/deploy.sh
