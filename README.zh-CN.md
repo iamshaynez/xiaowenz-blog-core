@@ -14,8 +14,8 @@
 cmd/core/            装配与优雅退出（signal → Shutdown → sender.Wait → db.Close）
 internal/
   config/            环境变量加载 + prod 校验
-  db/                打开 SQLite（WAL）+ goose 自动迁移（migrations/0001_init.sql）
-  store/             全部数据访问（7 张表 + 统计口径）
+  db/                打开 SQLite（WAL）+ goose 自动迁移（migrations/*.sql）
+  store/             全部数据访问（9 张表 + 两层统计口径：raw 热层 + daily_stats 永久层）
   httpapi/           公开 JSON API（subscribe.go / comments.go / stats.go / downloads.go）
   mailer/            Mailer 接口、SMTP 实现（465 TLS / 587 STARTTLS）、LogMailer（dev）、嵌入模板
   s3store/           R2 S3 客户端 + 内存 Fake
@@ -23,6 +23,7 @@ internal/
   ratelimit/         内存 per-IP 令牌桶（定期清理）
   newsletter/        群发 worker（后台 goroutine，限速，send_log，状态机）
   backup/            cron 调度（管理台可改）：wal_checkpoint → VACUUM INTO → 私有桶 → 保留最近 7 份
+  stats/             统计压缩 cron：rollup 进 daily_stats → 清保留期外明细 → VACUUM（DB 有界）
   admin/             服务端渲染管理台（html/template，无 JS 框架）
 ```
 
@@ -44,6 +45,8 @@ internal/
 | `CORE_TRUSTED_PROXIES` | 空 | 可信反代列表（逗号分隔 CIDR/IP，如 `10.0.0.0/8,1.2.3.4`）；仅这些对端的 `X-Forwarded-For` 会被采信。**空 = 永不采信 XFF**，客户端 IP 一律取对端地址（防伪造绕过限流） |
 | `CORE_ENV` | `dev` | `prod` 时 cookie Secure + 启动强校验 |
 | `CORE_SEND_INTERVAL_MS` | `1000` | 群发限速（毫秒/封，默认 1 封/秒） |
+| `CORE_STATS_CRON` | `30 3 * * *` | 统计压缩 cron（rollup 进 daily_stats → 清保留期外明细 → VACUUM）；默认 03:30，先于 04:00 备份让快照已是压缩后的小库 |
+| `CORE_PAGEVIEW_RETENTION_DAYS` | `30` | raw pageviews 明细保留天数（2–3650）；逐日 PV/UV 指标在 daily_stats 永久保留，路径/来源/小时明细只覆盖本窗口 |
 | `CORE_MAILING_ADDRESS` | 空 | Newsletter 页脚物理邮寄地址占位 |
 
 **prod 启动校验**（`CORE_ENV=prod`）：`CORE_ADMIN_TOKEN`、`CORE_SMTP_HOST`+`CORE_SMTP_FROM`、`CORE_BASE_URL`、`CORE_SITE_URL` 缺失即退出非零。

@@ -13,7 +13,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	tables := []string{"subscribers", "comments", "newsletters", "downloads", "pageviews", "media", "send_log"}
+	tables := []string{"subscribers", "comments", "newsletters", "downloads", "pageviews", "media", "send_log", "daily_stats"}
 	for _, tbl := range tables {
 		var name string
 		err := d.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, tbl).Scan(&name)
