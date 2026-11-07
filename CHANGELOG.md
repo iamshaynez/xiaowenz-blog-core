@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Full-codebase review pass (architecture, quality, bugs). All changes test-first.
 
+### Added (per-site drill-down on the stats page)
+
+- **统计页按站过滤**：`GET /admin/stats/html?site=<host>` 把整页（总量卡/时间线/
+  热门路径/访问来源/小时粒度）切到该站口径；缺省仍是本站博客。多站总览的
+  站名变为链接点进对应视图，窗口 chips 与「← 本站」返回链接全程保留口径；
+  剧集下载为本站专属卡片，仅默认口径显示。store 查询本就带 site 维度，
+  本次只动 admin 页与模板。
+
 ### Added (multi-site pageview beacons — core as self-hosted GA-lite)
 
 - **多站打点**：`POST /api/pv` 升级为多站端点。站点身份取自 **Origin 头**
