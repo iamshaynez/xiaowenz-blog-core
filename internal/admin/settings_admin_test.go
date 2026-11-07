@@ -171,3 +171,77 @@ func TestBackupPageLinksToSettings(t *testing.T) {
 	}
 	_ = context.Background()
 }
+
+// ── 统计站点：多站打点域名白名单（手工维护，无环境变量） ──────────
+
+func TestSettingsStatsSitesSavedAndShown(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+
+	body := getSettingsPage(t, fx.handler, session)
+	if !strings.Contains(body, "统计站点") {
+		t.Fatal("settings page missing 统计站点 section")
+	}
+
+	rec := postBackupForm(t, fx.handler, session, "/admin/settings/stats-sites", url.Values{
+		"domains": {"https://ask.xiaowenz.com, card.xiaowenz.com\nmoney.xiaowenz.com"},
+	})
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "ok=stats") {
+		t.Fatalf("status=%d loc=%q, want 303 ok=stats", rec.Code, rec.Header().Get("Location"))
+	}
+
+	got, err := sysconfig.LoadStatsSites(fx.store)
+	if err != nil {
+		t.Fatalf("LoadStatsSites: %v", err)
+	}
+	want := []string{"ask.xiaowenz.com", "card.xiaowenz.com", "money.xiaowenz.com"}
+	if len(got) != len(want) {
+		t.Fatalf("saved = %v, want %v（归一化：去 scheme、去重）", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("entry %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// 页面回显已保存域名。
+	body = getSettingsPage(t, fx.handler, session)
+	if !strings.Contains(body, "ask.xiaowenz.com") {
+		t.Error("page missing saved domain")
+	}
+}
+
+// 清空保存 = 撤销全部他站接入（博客不受影响）。
+func TestSettingsStatsSitesCanBeCleared(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	postBackupForm(t, fx.handler, session, "/admin/settings/stats-sites", url.Values{
+		"domains": {"ask.xiaowenz.com"},
+	})
+	rec := postBackupForm(t, fx.handler, session, "/admin/settings/stats-sites", url.Values{
+		"domains": {"  "},
+	})
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "ok=stats") {
+		t.Fatalf("clear status=%d loc=%q", rec.Code, rec.Header().Get("Location"))
+	}
+	if got, _ := sysconfig.LoadStatsSites(fx.store); len(got) != 0 {
+		t.Errorf("after clear = %v, want empty", got)
+	}
+}
+
+// 非法条目（带路径/空格的 host）整单拒绝，不落库。
+func TestSettingsStatsSitesRejectsBadValues(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	for _, bad := range []string{"ask.xiaowenz.com/some/path", "has space.example.com", "https://ok.example.com,bad host.example.com"} {
+		rec := postBackupForm(t, fx.handler, session, "/admin/settings/stats-sites", url.Values{
+			"domains": {bad},
+		})
+		if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "err=stats") {
+			t.Errorf("domains %q accepted: %d %q", bad, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	if got, _ := sysconfig.LoadStatsSites(fx.store); len(got) != 0 {
+		t.Errorf("invalid domains persisted: %v", got)
+	}
+}

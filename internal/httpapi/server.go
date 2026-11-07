@@ -8,10 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +46,10 @@ type Server struct {
 	comLimit *ratelimit.Limiter
 	pvLimit  *ratelimit.Limiter
 
+	// siteHost 是 CORE_SITE_URL 的 host（小写）：打点 Origin 与之同域时
+	// 记为 site=''，保持博客统计与存量数据连续。
+	siteHost string
+
 	signKey []byte
 }
 
@@ -55,6 +61,11 @@ func NewServer(d Deps) *Server {
 		log = slog.Default()
 	}
 	key := sha256.Sum256([]byte("core-moderate-sign|" + d.Config.AdminToken))
+	su, err := url.Parse(d.Config.SiteURL)
+	if err != nil {
+		err = fmt.Errorf("parse CORE_SITE_URL: %w", err)
+		panic(err) // unreachable: config validation rejects malformed URLs earlier
+	}
 	return &Server{
 		store:    d.Store,
 		mailer:   d.Mailer,
@@ -64,6 +75,7 @@ func NewServer(d Deps) *Server {
 		subLimit: ratelimit.New(5, time.Hour),
 		comLimit: ratelimit.New(10, time.Hour),
 		pvLimit:  ratelimit.New(60, time.Minute),
+		siteHost: strings.ToLower(su.Hostname()),
 		signKey:  key[:],
 	}
 }

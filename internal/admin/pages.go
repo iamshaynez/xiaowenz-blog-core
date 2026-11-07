@@ -7,6 +7,7 @@ import (
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +19,7 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().Add(-30 * 24 * time.Hour).Unix()
 	active, err1 := h.store.CountSubscribers("active", "")
 	pending, err2 := h.store.CountComments("pending")
-	pv, uv, err3 := h.store.PageviewStats(since)
+	pv, uv, err3 := h.store.PageviewStats("", since)
 	downloads, err4 := h.store.DownloadStats(since)
 	recent, err5 := h.store.ListComments("pending")
 	for _, err := range []error{err1, err2, err3, err4, err5} {
@@ -211,7 +212,7 @@ func (h *Handler) moderate(status string) http.HandlerFunc {
 // statsJSON is the machine-readable stats endpoint.
 func (h *Handler) statsJSON(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().Add(-30 * 24 * time.Hour).Unix()
-	pv, uv, err := h.store.PageviewStats(since)
+	pv, uv, err := h.store.PageviewStats("", since)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -258,7 +259,7 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	since := now.Add(-time.Duration(days) * 24 * time.Hour)
-	pv, uv, err := h.store.PageviewStats(since.Unix())
+	pv, uv, err := h.store.PageviewStats("", since.Unix())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -288,7 +289,7 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathsRaw, err := h.store.PathStats(since.Unix(), 20)
+	pathsRaw, err := h.store.PathStats("", since.Unix(), 20)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -302,7 +303,7 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, PathRow{PathStat: p, Share: share, Width: share})
 	}
 
-	refsRaw, err := h.store.ReferrerStats(since.Unix(), 20)
+	refsRaw, err := h.store.ReferrerStats("", since.Unix(), 20)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -320,11 +321,41 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		refs = append(refs, RefRow{RefStat: rf, Display: display, Share: share, Width: share})
 	}
 
+	// 多站总览（DAU）：永久层按站聚合，今日数字走 raw。
+	siteRows, err := h.store.SiteStats(now.AddDate(0, 0, -29))
+	if err != nil {
+		h.log.Error("site stats", "err", err)
+		siteRows = nil
+	}
+	siteHost := ""
+	if u, err := url.Parse(h.cfg.SiteURL); err == nil {
+		siteHost = strings.ToLower(u.Hostname())
+	}
+	sites := make([]siteView, 0, len(siteRows))
+	for _, r := range siteRows {
+		name := r.Site
+		if name == "" {
+			name = siteHost + "（本站）"
+		}
+		sites = append(sites, siteView{
+			Name: name, TodayPV: r.TodayPV, TodayUV: r.TodayUV,
+			WeekPV: r.WeekPV, WeekUV: r.WeekUV, MonthPV: r.MonthPV, MonthUV: r.MonthUV,
+		})
+	}
+
 	h.render(w, "stats.html", map[string]any{
 		"Title": "统计", "PV30": pv, "UV30": uv, "Days": days, "WinLabel": winLabel,
 		"ActiveSubs": active, "PendingComments": pending, "Downloads": downloads,
-		"Timeline": cols, "Paths": paths, "Referrers": refs,
+		"Timeline": cols, "Paths": paths, "Referrers": refs, "Sites": sites,
 	})
+}
+
+// siteView 是多站总览表的一行（site=” 显示为本站域名）。
+type siteView struct {
+	Name             string
+	TodayPV, TodayUV int
+	WeekPV, WeekUV   int
+	MonthPV, MonthUV int
 }
 
 // timelineCols 补零成连续序列；days==1 用小时粒度（日粒度在 24 小时窗口
@@ -346,7 +377,7 @@ func (h *Handler) timelineCols(since, now time.Time, days int) ([]DayCol, error)
 	}
 
 	if days == 1 {
-		sparse, err := h.store.PageviewTimeseriesHourly(since.Unix())
+		sparse, err := h.store.PageviewTimeseriesHourly("", since.Unix())
 		if err != nil {
 			return nil, err
 		}
@@ -379,7 +410,7 @@ func (h *Handler) timelineCols(since, now time.Time, days int) ([]DayCol, error)
 		return cols, nil
 	}
 
-	sparse, err := h.store.PageviewTimeseries(since.Unix())
+	sparse, err := h.store.PageviewTimeseries("", since.Unix())
 	if err != nil {
 		return nil, err
 	}

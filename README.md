@@ -13,8 +13,8 @@ A self-hosted companion service that gives a static site (Hugo, Astro, Jekyll �
 - 💬 **Comments** — moderated by default, one-click approve/reject links in the notification email, no third-party comment SaaS
 - 🎙️ **Podcast analytics** — download counting via a Podtrac-style 302 redirect endpoint, same-day dedupe per listener
 - 🖼️ **Media hosting** — admin uploads straight to Cloudflare R2 (zero egress fees)
-- 📊 **Privacy-friendly stats** — page views without cookies; IPs are only stored as daily-rotated SHA-256 hashes
-- ⚙️ **Console-managed storage** — media & backup R2 targets configured on the admin「系统参数」page (settings-first, `CORE_R2_*` env as per-field fallback for media); uploads and backups rebuild their clients per operation, so changes apply without a restart
+- 📊 **Privacy-friendly stats** — page views without cookies; IPs are only stored as daily-rotated SHA-256 hashes; multi-site beacons (Origin-verified, console-managed domain list) turn core into a tiny self-hosted analytics for all your sites — sites keep working when core is down ([docs/multisite-stats.md](docs/multisite-stats.md), 中文)
+- ⚙️ **Console-managed storage** — media & backup R2 targets plus the stats beacon domain list configured on the admin「系统参数」page (settings-first, `CORE_R2_*` env as per-field fallback for media); uploads and backups rebuild their clients per operation, so changes apply without a restart
 - 💾 **Zero-ops persistence** — embedded SQLite (WAL) with automatic migrations and scheduled backups to a private R2 bucket (cron editable in the console; last 7 kept; manual run + connection test)
 
 Single binary, single container, single volume. No framework, no CGO, no external database.

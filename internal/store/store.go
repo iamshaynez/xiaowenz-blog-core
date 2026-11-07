@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 )
@@ -625,12 +626,13 @@ func (s *Store) DownloadStats(since int64) (map[string]int, error) {
 	return out, rows.Err()
 }
 
-// RecordPageview inserts one pageview row. Only the device class of the UA is
-// stored — the hot layer never needs the full string.
-func (s *Store) RecordPageview(path, referrer, ipHash, ua string) error {
+// RecordPageview inserts one pageview row. site is the beacon origin host
+// ("" = the blog itself). Only the device class of the UA is stored — the hot
+// layer never needs the full string.
+func (s *Store) RecordPageview(site, path, referrer, ipHash, ua string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO pageviews (path, referrer, ip_hash, ua, created_at) VALUES (?, ?, ?, ?, ?)`,
-		path, referrer, ipHash, deviceClass(ua), s.now().Unix())
+		`INSERT INTO pageviews (site, path, referrer, ip_hash, ua, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		site, path, referrer, ipHash, deviceClass(ua), s.now().Unix())
 	if err != nil {
 		return fmt.Errorf("record pageview: %w", err)
 	}
@@ -701,14 +703,16 @@ func (s *Store) useRollupStats(since int64) bool {
 	return since < s.now().Add(-s.pvRetention()).Unix()
 }
 
-// PageviewStats returns PV and UV since epoch second. UV 按日加盐意味着跨日
-// 访客本就不可链接：多日 UV = 各日去重之和（uv 跨日可加，语义与旧口径一致）。
-// 窗口落在保留期内走 raw 精确路径；更宽的窗口合并 daily_stats 永久层 +
-// 尚未聚合的 raw 天（rollup 缺位时自愈）。
-func (s *Store) PageviewStats(since int64) (pv, uv int, err error) {
+// PageviewStats returns PV and UV since epoch second, scoped to one site
+// ("" = the blog). UV 按日加盐意味着跨日访客本就不可链接：多日 UV = 各日去重
+// 之和（uv 跨日可加，语义与旧口径一致）。窗口落在保留期内走 raw 精确路径；
+// 更宽的窗口合并 daily_stats 永久层 + 尚未聚合的 raw 天（rollup 缺位时自愈）。
+// raw 兜底按 (site, day) 对排除——他站同日的 rollup 行不得误伤本站 raw。
+func (s *Store) PageviewStats(site string, since int64) (pv, uv int, err error) {
 	if !s.useRollupStats(since) {
 		err = s.db.QueryRow(
-			`SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews WHERE created_at>=?`, since).
+			`SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews
+			 WHERE site=? AND created_at>=?`, site, since).
 			Scan(&pv, &uv)
 		if err != nil {
 			return 0, 0, fmt.Errorf("pageview stats: %w", err)
@@ -718,17 +722,18 @@ func (s *Store) PageviewStats(since int64) (pv, uv int, err error) {
 
 	if err := s.db.QueryRow(
 		`SELECT COALESCE(SUM(pv),0), COALESCE(SUM(uv),0) FROM daily_stats
-		 WHERE day >= date(?,'unixepoch','localtime')`, since).
+		 WHERE site=? AND day >= date(?,'unixepoch','localtime')`, site, since).
 		Scan(&pv, &uv); err != nil {
 		return 0, 0, fmt.Errorf("pageview stats rollup: %w", err)
 	}
-	// raw 兜底：只数 daily_stats 还没有的天（缺位自愈），永不双计。
 	var rpv, ruv int
 	if err := s.db.QueryRow(
 		`SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews
-		 WHERE created_at>=?
-		   AND date(created_at,'unixepoch','localtime') NOT IN (SELECT day FROM daily_stats)`,
-		since).Scan(&rpv, &ruv); err != nil {
+		 WHERE site=? AND created_at>=?
+		   AND NOT EXISTS (SELECT 1 FROM daily_stats d
+		                   WHERE d.site=pageviews.site
+		                     AND d.day=date(pageviews.created_at,'unixepoch','localtime'))`,
+		site, since).Scan(&rpv, &ruv); err != nil {
 		return 0, 0, fmt.Errorf("pageview stats raw tail: %w", err)
 	}
 	return pv + rpv, uv + ruv, nil
@@ -867,14 +872,15 @@ type DayStat struct {
 	UV  int
 }
 
-// PageviewTimeseries returns per-day PV/UV since the unix timestamp.
-// 零流量的天不出现（连续序列由展示层补零）。窗口超出保留期时合并
-// daily_stats 永久层与未聚合的 raw 天：明细被清理的历史日照常出柱子。
-func (s *Store) PageviewTimeseries(since int64) ([]DayStat, error) {
+// PageviewTimeseries returns per-day PV/UV since the unix timestamp, scoped to
+// one site ("" = the blog). 零流量的天不出现（连续序列由展示层补零）。窗口
+// 超出保留期时合并 daily_stats 永久层与未聚合的 raw 天：明细被清理的历史日
+// 照常出柱子。raw 兜底按 (site, day) 对排除。
+func (s *Store) PageviewTimeseries(site string, since int64) ([]DayStat, error) {
 	if !s.useRollupStats(since) {
 		rows, err := s.db.Query(
 			`SELECT date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
-			 FROM pageviews WHERE created_at>=? GROUP BY 1 ORDER BY 1`, since)
+			 FROM pageviews WHERE site=? AND created_at>=? GROUP BY 1 ORDER BY 1`, site, since)
 		if err != nil {
 			return nil, fmt.Errorf("pageview timeseries: %w", err)
 		}
@@ -893,7 +899,7 @@ func (s *Store) PageviewTimeseries(since int64) ([]DayStat, error) {
 	// 永久层：窗口内已聚合的天（可能明细已清）。
 	rows, err := s.db.Query(
 		`SELECT day, pv, uv FROM daily_stats
-		 WHERE day >= date(?,'unixepoch','localtime') ORDER BY day`, since)
+		 WHERE site=? AND day >= date(?,'unixepoch','localtime') ORDER BY day`, site, since)
 	if err != nil {
 		return nil, fmt.Errorf("pageview timeseries rollup: %w", err)
 	}
@@ -915,9 +921,11 @@ func (s *Store) PageviewTimeseries(since int64) ([]DayStat, error) {
 	rows, err = s.db.Query(
 		`SELECT date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
 		 FROM pageviews
-		 WHERE created_at>=?
-		   AND date(created_at,'unixepoch','localtime') NOT IN (SELECT day FROM daily_stats)
-		 GROUP BY 1 ORDER BY 1`, since)
+		 WHERE site=? AND created_at>=?
+		   AND NOT EXISTS (SELECT 1 FROM daily_stats d
+		                   WHERE d.site=pageviews.site
+		                     AND d.day=date(pageviews.created_at,'unixepoch','localtime'))
+		 GROUP BY 1 ORDER BY 1`, site, since)
 	if err != nil {
 		return nil, fmt.Errorf("pageview timeseries raw tail: %w", err)
 	}
@@ -940,12 +948,13 @@ type HourStat struct {
 	UV   int
 }
 
-// PageviewTimeseriesHourly returns per-hour PV/UV since the unix timestamp.
-// 供 24 小时窗口的统计页使用（日粒度在该窗口只剩一两根柱子）。
-func (s *Store) PageviewTimeseriesHourly(since int64) ([]HourStat, error) {
+// PageviewTimeseriesHourly returns per-hour PV/UV since the unix timestamp,
+// scoped to one site ("" = the blog). 供 24 小时窗口的统计页使用（日粒度在该
+// 窗口只剩一两根柱子）。
+func (s *Store) PageviewTimeseriesHourly(site string, since int64) ([]HourStat, error) {
 	rows, err := s.db.Query(
 		`SELECT strftime('%Y-%m-%d %H', created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
-		 FROM pageviews WHERE created_at>=? GROUP BY 1 ORDER BY 1`, since)
+		 FROM pageviews WHERE site=? AND created_at>=? GROUP BY 1 ORDER BY 1`, site, since)
 	if err != nil {
 		return nil, fmt.Errorf("pageview timeseries hourly: %w", err)
 	}
@@ -968,11 +977,12 @@ type PathStat struct {
 	UV   int
 }
 
-// PathStats returns top paths by PV since the unix timestamp.
-func (s *Store) PathStats(since int64, limit int) ([]PathStat, error) {
+// PathStats returns top paths by PV since the unix timestamp, scoped to one
+// site ("" = the blog).
+func (s *Store) PathStats(site string, since int64, limit int) ([]PathStat, error) {
 	rows, err := s.db.Query(
 		`SELECT path, COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews
-		 WHERE created_at>=? GROUP BY path ORDER BY 2 DESC, path LIMIT ?`, since, limit)
+		 WHERE site=? AND created_at>=? GROUP BY path ORDER BY 2 DESC, path LIMIT ?`, site, since, limit)
 	if err != nil {
 		return nil, fmt.Errorf("path stats: %w", err)
 	}
@@ -995,11 +1005,12 @@ type RefStat struct {
 	UV       int
 }
 
-// ReferrerStats returns top referrers by PV since the unix timestamp.
-func (s *Store) ReferrerStats(since int64, limit int) ([]RefStat, error) {
+// ReferrerStats returns top referrers by PV since the unix timestamp, scoped
+// to one site ("" = the blog).
+func (s *Store) ReferrerStats(site string, since int64, limit int) ([]RefStat, error) {
 	rows, err := s.db.Query(
 		`SELECT referrer, COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews
-		 WHERE created_at>=? GROUP BY referrer ORDER BY 2 DESC, referrer LIMIT ?`, since, limit)
+		 WHERE site=? AND created_at>=? GROUP BY referrer ORDER BY 2 DESC, referrer LIMIT ?`, site, since, limit)
 	if err != nil {
 		return nil, fmt.Errorf("referrer stats: %w", err)
 	}
@@ -1013,6 +1024,101 @@ func (s *Store) ReferrerStats(since int64, limit int) ([]RefStat, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// SiteStatRow 是多站总览的一行（管理台统计页）：今日/近 7 天/查询窗口的
+// PV 与 UV。Site 空串 = 博客本站。
+type SiteStatRow struct {
+	Site             string
+	TodayPV, TodayUV int
+	WeekPV, WeekUV   int // 近 7 天（含今天）
+	MonthPV, MonthUV int // 查询窗口全程（调用方传 30 天）
+}
+
+// SiteStats 聚合各站的三窗口 PV/UV，数据源与 PageviewStats 同一套合并口径
+// （daily_stats 永久层 + (site,day) 对排除的 raw 兜底）。按窗口 PV 降序。
+func (s *Store) SiteStats(since time.Time) ([]SiteStatRow, error) {
+	sinceDay := since.Format("2006-01-02")
+	today := s.now().Format("2006-01-02")
+	week := s.now().AddDate(0, 0, -6).Format("2006-01-02")
+
+	type dayRow struct {
+		site, day string
+		pv, uv    int
+	}
+	var days []dayRow
+
+	rows, err := s.db.Query(
+		`SELECT site, day, pv, uv FROM daily_stats WHERE day >= ?`, sinceDay)
+	if err != nil {
+		return nil, fmt.Errorf("site stats rollup: %w", err)
+	}
+	for rows.Next() {
+		var d dayRow
+		if err := rows.Scan(&d.site, &d.day, &d.pv, &d.uv); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		days = append(days, d)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	rows, err = s.db.Query(
+		`SELECT site, date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
+		 FROM pageviews
+		 WHERE date(created_at,'unixepoch','localtime') >= ?
+		   AND NOT EXISTS (SELECT 1 FROM daily_stats d
+		                   WHERE d.site=pageviews.site
+		                     AND d.day=date(pageviews.created_at,'unixepoch','localtime'))
+		 GROUP BY 1, 2`, sinceDay)
+	if err != nil {
+		return nil, fmt.Errorf("site stats raw tail: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var d dayRow
+		if err := rows.Scan(&d.site, &d.day, &d.pv, &d.uv); err != nil {
+			return nil, err
+		}
+		days = append(days, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	bySite := map[string]*SiteStatRow{}
+	for _, d := range days {
+		r := bySite[d.site]
+		if r == nil {
+			r = &SiteStatRow{Site: d.site}
+			bySite[d.site] = r
+		}
+		r.MonthPV += d.pv
+		r.MonthUV += d.uv
+		if d.day >= week {
+			r.WeekPV += d.pv
+			r.WeekUV += d.uv
+		}
+		if d.day >= today {
+			r.TodayPV += d.pv
+			r.TodayUV += d.uv
+		}
+	}
+	out := make([]SiteStatRow, 0, len(bySite))
+	for _, r := range bySite {
+		out = append(out, *r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].MonthPV != out[j].MonthPV {
+			return out[i].MonthPV > out[j].MonthPV
+		}
+		return out[i].Site < out[j].Site
+	})
+	return out, nil
 }
 
 // DeleteNewsletter removes a newsletter. sending（在途群发）拒删；

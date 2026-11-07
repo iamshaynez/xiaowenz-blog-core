@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 统计页是流量分析台：时间线、路径维度、来源维度，可按时间窗筛选——
@@ -17,7 +18,7 @@ func TestStatsPageRichAnalytics(t *testing.T) {
 		{"/blog/rocket.html", "", "ip1"},
 		{"/episodes/ep001", "", "ip3"},
 	} {
-		if err := fx.store.RecordPageview(x.path, x.ref, x.ip, "ua"); err != nil {
+		if err := fx.store.RecordPageview("", x.path, x.ref, x.ip, "ua"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -55,7 +56,7 @@ func TestStatsPageRichAnalytics(t *testing.T) {
 // "刚才谁在读什么"要一眼可见。
 func TestStatsPage24hQuickRange(t *testing.T) {
 	fx := newAdminFixture(t)
-	if err := fx.store.RecordPageview("/blog/fresh.html", "https://x.com", "ip1", "ua"); err != nil {
+	if err := fx.store.RecordPageview("", "/blog/fresh.html", "https://x.com", "ip1", "ua"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,6 +77,34 @@ func TestStatsPage24hQuickRange(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("24h 统计页缺 %q", want)
+		}
+	}
+}
+
+// 多站总览：统计页列出各接入站的今日/近7天/近30天 PV/UV，博客在列。
+func TestStatsPageMultiSiteOverview(t *testing.T) {
+	fx := newAdminFixture(t)
+	fx.store.PVRetention = 30 * 24 * time.Hour
+	// 博客今天一条、ask 站今天两条。
+	if err := fx.store.RecordPageview("", "/blog/a", "", "h1", "ua"); err != nil {
+		t.Fatal(err)
+	}
+	for _, ip := range []string{"a1", "a2"} {
+		if err := fx.store.RecordPageview("ask.xiaowenz.com", "/q", "", ip, "ua"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	req := authed(http.MethodGet, "/admin/stats/html?days=30", nil, login(t, fx.handler))
+	fx.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"ask.xiaowenz.com", "多站"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("统计页缺 %q", want)
 		}
 	}
 }

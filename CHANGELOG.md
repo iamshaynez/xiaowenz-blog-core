@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Full-codebase review pass (architecture, quality, bugs). All changes test-first.
 
+### Added (multi-site pageview beacons — core as self-hosted GA-lite)
+
+- **多站打点**：`POST /api/pv` 升级为多站端点。站点身份取自 **Origin 头**
+  （浏览器跨域 POST 必带，客户端不可伪造）：`CORE_SITE_URL` 同域记为
+  `site=''`（博客统计与存量数据无缝连续）；后台登记域名记为其 host；
+  其余（含无 Origin 的非浏览器请求）204 静默丢弃，不污染。
+- **域名白名单进后台**（无环境变量）：「系统参数」页新增「统计站点」卡片，
+  settings 表 `stats_sites` 每行一个纯域名，归一化（去 scheme/端口、小写、
+  去重）保存、非法条目整单拒绝，保存即时生效无需重启。
+- **sendBeacon 兼容**：text/plain 文本体按 JSON 解析——sendBeacon /
+  `fetch(mode:'no-cors')` 属简单请求，无 CORS 预检，各站一段内联 snippet
+  即接入（`docs/multisite-stats.md`，含"core 挂了不影响各站"的故障模式
+  说明）；限流 60 次/分/IP 提前到门禁之前。
+- **读数按 site 隔离**：store 全部统计查询（总量/时间线/小时/路径/来源）
+  增加 site 维度，管理台统计页维持博客口径；raw 兜底合并改按 (site, day)
+  对排除，他站 rollup 行不误伤本站。统计页新增**多站总览**表（各站今日/
+  近 7 天/近 30 天 PV/UV，即 DAU）。
+
 ### Added (bounded pageview statistics — two-tier storage)
 
 - **统计存储分两层，DB 不再无界膨胀**（迁移 0003）：raw `pageviews` 变为

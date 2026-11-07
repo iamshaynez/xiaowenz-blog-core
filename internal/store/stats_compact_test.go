@@ -30,7 +30,7 @@ func TestDeviceClass(t *testing.T) {
 func TestRecordPageviewStoresDeviceClassNotFullUA(t *testing.T) {
 	s := newTestStore(t)
 	full := "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari/604.1"
-	if err := s.RecordPageview("/a", "", "h1", full); err != nil {
+	if err := s.RecordPageview("", "/a", "", "h1", full); err != nil {
 		t.Fatalf("RecordPageview: %v", err)
 	}
 	var stored string
@@ -52,18 +52,18 @@ func TestCompactPageviewsRollsUpThenPrunes(t *testing.T) {
 	// 40 天前：保留期外，聚合后必须被清掉。
 	dayA := now.AddDate(0, 0, -40)
 	s.now = func() time.Time { return dayA.Add(time.Hour) }
-	_ = s.RecordPageview("/old", "", "ipA1", "ua")
-	_ = s.RecordPageview("/old", "", "ipA1", "ua") // 同日同访客 → 1 UV
+	_ = s.RecordPageview("", "/old", "", "ipA1", "ua")
+	_ = s.RecordPageview("", "/old", "", "ipA1", "ua") // 同日同访客 → 1 UV
 	// 3 天前：保留期内，聚合后明细继续留（路径/来源维度的数据地基）。
 	dayB := now.AddDate(0, 0, -3)
 	s.now = func() time.Time { return dayB.Add(time.Hour) }
-	_ = s.RecordPageview("/a", "https://g.com", "ipB1", "ua")
-	_ = s.RecordPageview("/a", "", "ipB1", "ua")
+	_ = s.RecordPageview("", "/a", "https://g.com", "ipB1", "ua")
+	_ = s.RecordPageview("", "/a", "", "ipB1", "ua")
 	s.now = func() time.Time { return dayB.Add(2 * time.Hour) }
-	_ = s.RecordPageview("/b", "", "ipB2", "ua")
+	_ = s.RecordPageview("", "/b", "", "ipB2", "ua")
 	// 今天：未完结，不聚合、不清理。
 	s.now = func() time.Time { return now }
-	_ = s.RecordPageview("/today", "", "ipT1", "ua")
+	_ = s.RecordPageview("", "/today", "", "ipT1", "ua")
 
 	s.now = func() time.Time { return now }
 	rolled, pruned, err := s.CompactPageviews(30 * 24 * time.Hour)
@@ -134,10 +134,10 @@ func TestPageviewStatsSurvivePrune(t *testing.T) {
 	old := now.AddDate(0, 0, -40)
 	for i, ip := range []string{"ip1", "ip1", "ip2"} {
 		s.now = func() time.Time { return old.Add(time.Duration(i) * time.Minute) }
-		_ = s.RecordPageview("/old", "", ip, "ua")
+		_ = s.RecordPageview("", "/old", "", ip, "ua")
 	}
 	s.now = func() time.Time { return now }
-	_ = s.RecordPageview("/today", "", "ipT", "ua")
+	_ = s.RecordPageview("", "/today", "", "ipT", "ua")
 
 	s.now = func() time.Time { return now }
 	if _, _, err := s.CompactPageviews(30 * 24 * time.Hour); err != nil {
@@ -145,7 +145,7 @@ func TestPageviewStatsSurvivePrune(t *testing.T) {
 	}
 
 	// since=0：窗口超出保留期 → 走合并路径，全历史可见。
-	pv, uv, err := s.PageviewStats(0)
+	pv, uv, err := s.PageviewStats("", 0)
 	if err != nil {
 		t.Fatalf("PageviewStats: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestPageviewStatsSurvivePrune(t *testing.T) {
 		t.Errorf("pv=%d uv=%d, want 4/3（rollup 3/2 + 今日 raw 1/1）", pv, uv)
 	}
 
-	ts, err := s.PageviewTimeseries(0)
+	ts, err := s.PageviewTimeseries("", 0)
 	if err != nil {
 		t.Fatalf("PageviewTimeseries: %v", err)
 	}
@@ -174,8 +174,8 @@ func TestPageviewTimeseriesNoDoubleCount(t *testing.T) {
 	now := time.Date(2026, 11, 7, 9, 0, 0, 0, time.Local)
 	yesterday := now.AddDate(0, 0, -1)
 	s.now = func() time.Time { return yesterday.Add(time.Hour) }
-	_ = s.RecordPageview("/a", "", "ip1", "ua")
-	_ = s.RecordPageview("/a", "", "ip2", "ua")
+	_ = s.RecordPageview("", "/a", "", "ip1", "ua")
+	_ = s.RecordPageview("", "/a", "", "ip2", "ua")
 
 	s.now = func() time.Time { return now }
 	// 只聚合不清理：昨天的 raw 行还在，rollup 行也在。
@@ -183,7 +183,7 @@ func TestPageviewTimeseriesNoDoubleCount(t *testing.T) {
 		t.Fatalf("CompactPageviews: %v", err)
 	}
 
-	pv, uv, err := s.PageviewStats(0)
+	pv, uv, err := s.PageviewStats("", 0)
 	if err != nil {
 		t.Fatalf("PageviewStats: %v", err)
 	}
@@ -203,12 +203,12 @@ func TestPageviewStatsShortWindowStaysExact(t *testing.T) {
 		now.Add(-2 * time.Hour),       // 2 小时前：窗内
 	} {
 		s.now = func() time.Time { return at }
-		_ = s.RecordPageview("/a", "", "ip1", "ua")
+		_ = s.RecordPageview("", "/a", "", "ip1", "ua")
 	}
 	s.PVRetention = 30 * 24 * time.Hour
 	s.now = func() time.Time { return now }
 
-	pv, uv, err := s.PageviewStats(now.Add(-24 * time.Hour).Unix())
+	pv, uv, err := s.PageviewStats("", now.Add(-24*time.Hour).Unix())
 	if err != nil {
 		t.Fatalf("PageviewStats: %v", err)
 	}

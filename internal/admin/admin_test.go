@@ -540,7 +540,7 @@ func TestMediaUploadWithoutR2Degrades(t *testing.T) {
 func TestAdminStats(t *testing.T) {
 	fx := newAdminFixture(t)
 	session := login(t, fx.handler)
-	_ = fx.store.RecordPageview("/a", "", "h1", "")
+	_ = fx.store.RecordPageview("", "/a", "", "h1", "")
 	_, _ = fx.store.RecordDownloadDedup("ep1", "h1", "", "")
 
 	rec := httptest.NewRecorder()
