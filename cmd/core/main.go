@@ -19,6 +19,7 @@ import (
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/newsletter"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/s3store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/stats"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/sysconfig"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/turnstile"
@@ -61,6 +62,8 @@ func run(cfg *config.Config, log *slog.Logger) error {
 		return err
 	}
 	st := store.New(d)
+	// 统计热层有界：raw pageviews 只留保留期，超出窗口的读数走 daily_stats。
+	st.PVRetention = time.Duration(cfg.PageviewRetentionDays) * 24 * time.Hour
 
 	// Idempotent recovery: newsletters stuck in 'sending' revert to draft.
 	if n, err := st.RevertSendingToDraft(); err != nil {
@@ -167,6 +170,13 @@ func run(cfg *config.Config, log *slog.Logger) error {
 
 	// Backup scheduler (cron from settings), stops with the process context.
 	go backer.Start(ctx)
+
+	// Pageview compactor: nightly rollup + prune + VACUUM keeps the db bounded;
+	// 03:30 by default, ahead of the 04:00 backup so snapshots are compacted.
+	compactor := stats.NewCompactor(d, st, log)
+	compactor.Cron = cfg.StatsCron
+	compactor.Retention = st.PVRetention
+	go compactor.Start(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {

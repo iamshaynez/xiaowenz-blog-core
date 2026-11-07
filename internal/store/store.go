@@ -15,15 +15,24 @@ import (
 	"time"
 )
 
+// DefaultPVRetention bounds the raw pageviews table: older rows are rolled
+// into daily_stats and deleted, so the hot layer never outgrows this window.
+const DefaultPVRetention = 30 * 24 * time.Hour
+
 // Store wraps the SQL database. now is injectable for tests (clock fake).
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+
+	// PVRetention is how long raw pageview rows live before compaction.
+	// Windows that fit inside it are answered from raw data exactly (to the
+	// timestamp); wider windows merge the permanent daily_stats layer.
+	PVRetention time.Duration
 }
 
 // New creates a Store over an already-migrated database.
 func New(d *sql.DB) *Store {
-	return &Store{db: d, now: time.Now}
+	return &Store{db: d, now: time.Now, PVRetention: DefaultPVRetention}
 }
 
 // ErrNotFound is returned when a lookup matches no row.
@@ -38,10 +47,33 @@ func NewToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// HashIP implements the privacy rule: sha256(ip + YYYY-MM-DD) hex, daily rotation.
+// HashIP implements the privacy rule: sha256(ip + YYYY-MM-DD) 的前 16 个十六进
+// 制字符（64 bit），按日轮换。截到 64 bit 是刻意的行宽瘦身——按日去重的量级下
+// 碰撞概率可忽略，一行省 48 字节。
 func HashIP(ip string, t time.Time) string {
 	sum := sha256.Sum256([]byte(ip + t.UTC().Format("2006-01-02")))
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:8])
+}
+
+// deviceClass collapses a User-Agent string (100–300B) into one character:
+// m=mobile/tablet, d=desktop, b=bot/crawler, o=other. The stats hot layer
+// only ever needs "what kind of device", never the full UA.
+func deviceClass(ua string) string {
+	u := strings.ToLower(ua)
+	switch {
+	case strings.Contains(u, "bot"), strings.Contains(u, "spider"),
+		strings.Contains(u, "crawl"), strings.Contains(u, "slurp"),
+		strings.Contains(u, "headless"):
+		return "b"
+	case strings.Contains(u, "mobile"), strings.Contains(u, "iphone"),
+		strings.Contains(u, "ipad"), strings.Contains(u, "android"):
+		return "m"
+	case strings.Contains(u, "windows"), strings.Contains(u, "macintosh"),
+		strings.Contains(u, "x11"), strings.Contains(u, "linux"):
+		return "d"
+	default:
+		return "o"
+	}
 }
 
 func normalizeEmail(email string) string {
@@ -593,26 +625,113 @@ func (s *Store) DownloadStats(since int64) (map[string]int, error) {
 	return out, rows.Err()
 }
 
-// RecordPageview inserts one pageview row.
+// RecordPageview inserts one pageview row. Only the device class of the UA is
+// stored — the hot layer never needs the full string.
 func (s *Store) RecordPageview(path, referrer, ipHash, ua string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO pageviews (path, referrer, ip_hash, ua, created_at) VALUES (?, ?, ?, ?, ?)`,
-		path, referrer, ipHash, ua, s.now().Unix())
+		path, referrer, ipHash, deviceClass(ua), s.now().Unix())
 	if err != nil {
 		return fmt.Errorf("record pageview: %w", err)
 	}
 	return nil
 }
 
-// PageviewStats returns PV count and UV (distinct ip_hash) since epoch second.
-func (s *Store) PageviewStats(since int64) (pv, uv int, err error) {
-	err = s.db.QueryRow(
-		`SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews WHERE created_at>=?`, since).
-		Scan(&pv, &uv)
-	if err != nil {
-		return 0, 0, fmt.Errorf("pageview stats: %w", err)
+// CompactPageviews rolls complete days of raw pageviews into daily_stats,
+// then deletes rows older than retention — in that order, in one transaction,
+// so no day is deleted before it is aggregated. Today (an incomplete day) is
+// neither rolled nor pruned. Rolled values are exact recomputations (same-day
+// ip_hash dedup), so re-running is idempotent; rollup rows survive their raw
+// data being pruned. Returns days rolled and rows pruned.
+func (s *Store) CompactPageviews(retention time.Duration) (rolled, pruned int64, err error) {
+	if retention < 2*24*time.Hour {
+		return 0, 0, fmt.Errorf("pageview retention %s too short: a day must fit whole", retention)
 	}
-	return pv, uv, nil
+	now := s.now()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, 0, fmt.Errorf("compact pageviews: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// 结日（localtime）聚合进永久层；upsert 保证重跑是重算而非叠加。
+	res, err := tx.Exec(
+		`INSERT INTO daily_stats (site, day, pv, uv)
+		 SELECT site, date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
+		 FROM pageviews
+		 WHERE date(created_at,'unixepoch','localtime') < date(?,'unixepoch','localtime')
+		 GROUP BY 1, 2
+		 ON CONFLICT(site, day) DO UPDATE SET pv=excluded.pv, uv=excluded.uv`,
+		now.Unix())
+	if err != nil {
+		return 0, 0, fmt.Errorf("rollup pageviews: %w", err)
+	}
+	if rolled, err = res.RowsAffected(); err != nil {
+		return 0, 0, fmt.Errorf("rollup rows affected: %w", err)
+	}
+
+	res, err = tx.Exec(
+		`DELETE FROM pageviews WHERE created_at < ?`, now.Add(-retention).Unix())
+	if err != nil {
+		return 0, 0, fmt.Errorf("prune pageviews: %w", err)
+	}
+	if pruned, err = res.RowsAffected(); err != nil {
+		return 0, 0, fmt.Errorf("prune rows affected: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, 0, fmt.Errorf("compact pageviews commit: %w", err)
+	}
+	return rolled, pruned, nil
+}
+
+// pvRetention returns the effective retention window (zero value = default).
+func (s *Store) pvRetention() time.Duration {
+	if s.PVRetention <= 0 {
+		return DefaultPVRetention
+	}
+	return s.PVRetention
+}
+
+// useRollupStats reports whether a since-window reaches beyond the raw
+// retention window: raw data alone can no longer answer it, so queries merge
+// the permanent daily_stats layer. Windows inside retention keep the exact
+// raw semantics (down to the timestamp, not the day).
+func (s *Store) useRollupStats(since int64) bool {
+	return since < s.now().Add(-s.pvRetention()).Unix()
+}
+
+// PageviewStats returns PV and UV since epoch second. UV 按日加盐意味着跨日
+// 访客本就不可链接：多日 UV = 各日去重之和（uv 跨日可加，语义与旧口径一致）。
+// 窗口落在保留期内走 raw 精确路径；更宽的窗口合并 daily_stats 永久层 +
+// 尚未聚合的 raw 天（rollup 缺位时自愈）。
+func (s *Store) PageviewStats(since int64) (pv, uv int, err error) {
+	if !s.useRollupStats(since) {
+		err = s.db.QueryRow(
+			`SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews WHERE created_at>=?`, since).
+			Scan(&pv, &uv)
+		if err != nil {
+			return 0, 0, fmt.Errorf("pageview stats: %w", err)
+		}
+		return pv, uv, nil
+	}
+
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(pv),0), COALESCE(SUM(uv),0) FROM daily_stats
+		 WHERE day >= date(?,'unixepoch','localtime')`, since).
+		Scan(&pv, &uv); err != nil {
+		return 0, 0, fmt.Errorf("pageview stats rollup: %w", err)
+	}
+	// raw 兜底：只数 daily_stats 还没有的天（缺位自愈），永不双计。
+	var rpv, ruv int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*), COUNT(DISTINCT ip_hash) FROM pageviews
+		 WHERE created_at>=?
+		   AND date(created_at,'unixepoch','localtime') NOT IN (SELECT day FROM daily_stats)`,
+		since).Scan(&rpv, &ruv); err != nil {
+		return 0, 0, fmt.Errorf("pageview stats raw tail: %w", err)
+	}
+	return pv + rpv, uv + ruv, nil
 }
 
 // Media is a row of the media table.
@@ -749,16 +868,37 @@ type DayStat struct {
 }
 
 // PageviewTimeseries returns per-day PV/UV since the unix timestamp.
-// 零流量的天不出现（连续序列由展示层补零）。
+// 零流量的天不出现（连续序列由展示层补零）。窗口超出保留期时合并
+// daily_stats 永久层与未聚合的 raw 天：明细被清理的历史日照常出柱子。
 func (s *Store) PageviewTimeseries(since int64) ([]DayStat, error) {
+	if !s.useRollupStats(since) {
+		rows, err := s.db.Query(
+			`SELECT date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
+			 FROM pageviews WHERE created_at>=? GROUP BY 1 ORDER BY 1`, since)
+		if err != nil {
+			return nil, fmt.Errorf("pageview timeseries: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		var out []DayStat
+		for rows.Next() {
+			var d DayStat
+			if err := rows.Scan(&d.Day, &d.PV, &d.UV); err != nil {
+				return nil, err
+			}
+			out = append(out, d)
+		}
+		return out, rows.Err()
+	}
+
+	// 永久层：窗口内已聚合的天（可能明细已清）。
 	rows, err := s.db.Query(
-		`SELECT date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
-		 FROM pageviews WHERE created_at>=? GROUP BY 1 ORDER BY 1`, since)
+		`SELECT day, pv, uv FROM daily_stats
+		 WHERE day >= date(?,'unixepoch','localtime') ORDER BY day`, since)
 	if err != nil {
-		return nil, fmt.Errorf("pageview timeseries: %w", err)
+		return nil, fmt.Errorf("pageview timeseries rollup: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var out []DayStat
+	out := make([]DayStat, 0, 64)
 	for rows.Next() {
 		var d DayStat
 		if err := rows.Scan(&d.Day, &d.PV, &d.UV); err != nil {
@@ -766,6 +906,30 @@ func (s *Store) PageviewTimeseries(since int64) ([]DayStat, error) {
 		}
 		out = append(out, d)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// raw 兜底：daily_stats 缺位的天（含今天）。
+	rows, err = s.db.Query(
+		`SELECT date(created_at,'unixepoch','localtime'), COUNT(*), COUNT(DISTINCT ip_hash)
+		 FROM pageviews
+		 WHERE created_at>=?
+		   AND date(created_at,'unixepoch','localtime') NOT IN (SELECT day FROM daily_stats)
+		 GROUP BY 1 ORDER BY 1`, since)
+	if err != nil {
+		return nil, fmt.Errorf("pageview timeseries raw tail: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var d DayStat
+		if err := rows.Scan(&d.Day, &d.PV, &d.UV); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	// 两个来源按 day 有序且互斥，整体仍有序。
 	return out, rows.Err()
 }
 

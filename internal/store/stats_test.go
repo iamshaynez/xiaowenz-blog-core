@@ -137,8 +137,9 @@ func TestHashIPDailyRotation(t *testing.T) {
 	if h1 == h2 {
 		t.Error("hash must rotate daily")
 	}
-	if len(h1) != 64 {
-		t.Errorf("hash len = %d, want 64", len(h1))
+	// 16 hex = 64 bit：按日去重尺度碰撞可忽略，行宽省 48 字节。
+	if len(h1) != 16 {
+		t.Errorf("hash len = %d, want 16", len(h1))
 	}
 }
 

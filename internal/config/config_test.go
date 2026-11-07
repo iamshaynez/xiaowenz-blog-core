@@ -126,3 +126,53 @@ func TestInvalidPortRejected(t *testing.T) {
 		t.Fatal("Load() with non-numeric CORE_SMTP_PORT must fail")
 	}
 }
+
+// ── 统计压缩：cron 与保留期 ──────────────────────────────────
+
+func TestStatsCompactionDefaults(t *testing.T) {
+	t.Setenv("CORE_STATS_CRON", "")
+	t.Setenv("CORE_PAGEVIEW_RETENTION_DAYS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if cfg.StatsCron != "30 3 * * *" {
+		t.Errorf("StatsCron = %q, want 30 3 * * *（03:30，先于 04:00 备份）", cfg.StatsCron)
+	}
+	if cfg.PageviewRetentionDays != 30 {
+		t.Errorf("PageviewRetentionDays = %d, want 30", cfg.PageviewRetentionDays)
+	}
+}
+
+func TestStatsCompactionFromEnv(t *testing.T) {
+	t.Setenv("CORE_STATS_CRON", "15 5 * * *")
+	t.Setenv("CORE_PAGEVIEW_RETENTION_DAYS", "60")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if cfg.StatsCron != "15 5 * * *" {
+		t.Errorf("StatsCron = %q", cfg.StatsCron)
+	}
+	if cfg.PageviewRetentionDays != 60 {
+		t.Errorf("PageviewRetentionDays = %d, want 60", cfg.PageviewRetentionDays)
+	}
+}
+
+func TestInvalidStatsCronRejected(t *testing.T) {
+	t.Setenv("CORE_STATS_CRON", "not a cron")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with invalid CORE_STATS_CRON must fail fast")
+	}
+}
+
+func TestInvalidRetentionRejected(t *testing.T) {
+	for _, v := range []string{"abc", "0", "1"} {
+		t.Setenv("CORE_PAGEVIEW_RETENTION_DAYS", v)
+		if _, err := Load(); err == nil {
+			t.Fatalf("Load() with CORE_PAGEVIEW_RETENTION_DAYS=%q must fail", v)
+		}
+	}
+}

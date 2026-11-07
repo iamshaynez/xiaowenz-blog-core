@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Full-codebase review pass (architecture, quality, bugs). All changes test-first.
 
+### Added (bounded pageview statistics — two-tier storage)
+
+- **统计存储分两层，DB 不再无界膨胀**（迁移 0003）：raw `pageviews` 变为
+  有界热层（默认保留 30 天，`CORE_PAGEVIEW_RETENTION_DAYS`，2–3650 可调）；
+  新增 `daily_stats` 永久日聚合层（site+day 主键，pv/uv 精确值）。夜间压缩
+  任务（`internal/stats`，cron `CORE_STATS_CRON` 默认 03:30，先于 04:00 备份
+  让快照已是压缩后的小库）单事务内先 rollup 后 prune（未聚合的天绝不被
+  删，当天未完结不动），有删除时 wal_checkpoint + VACUUM 真正回收文件体积
+  （DELETE 只挂 freelist 不缩文件）；启动即跑一次，补上停机错过的夜晚。
+- **读数合并语义**：窗口落在保留期内走 raw 精确路径（精确到时间戳，24 小时
+  窗行为不变）；更宽的窗口（如 90 天）合并 daily_stats + 尚未聚合的 raw 天，
+  rollup 缺位自愈、同日不双计。ip_hash 按日加盐意味着跨日访客本就不可链接
+  ——多日 UV=各日去重之和，与旧口径一致，清理明细对指标无损。
+- **行宽瘦身**：ip_hash 截到 16 hex（64 bit，按日去重尺度碰撞可忽略）；
+  pageviews 的 ua 只存设备分类单字符（m/d/b/o），整条 UA 不落盘。
+  comments/downloads 不变。
+- **多站预留**：pageviews 加 `site` 列（当前恒空串）、daily_stats 主键含
+  site 维度——后续把 core 用作多站 GA-lite 时零迁移。
+- 配置项 `CORE_STATS_CRON` / `CORE_PAGEVIEW_RETENTION_DAYS` 同步进
+  `.env.example` 与两份 README 配置表；SPEC §2/§3.3/§4 更新两层口径说明。
+
 ### Added (CI auto-deploy)
 
 - **push main → gb-test 自动构建部署**（sanguo / novel-universe 同构）：CI 新增
