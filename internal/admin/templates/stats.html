@@ -3,14 +3,15 @@
 <main class="editorial-enter">
   <div class="page-head">
     <span class="kicker">ANALYTICS</span>
-    <h1>统计</h1>
+    <h1>统计 <span class="badge">{{.SiteLabel}}</span></h1>
     <div class="actions">
       <div class="chips" style="margin:0;">
-        <a href="/admin/stats/html?days=1" {{if eq .Days 1}}class="on"{{end}} data-days="1">近 24 小时</a>
-        <a href="/admin/stats/html?days=7" {{if eq .Days 7}}class="on"{{end}} data-days="7">近 7 天</a>
-        <a href="/admin/stats/html?days=30" {{if eq .Days 30}}class="on"{{end}} data-days="30">近 30 天</a>
-        <a href="/admin/stats/html?days=90" {{if eq .Days 90}}class="on"{{end}} data-days="90">近 90 天</a>
+        <a href="/admin/stats/html?days=1{{if .SiteParam}}&site={{.SiteParam}}{{end}}" {{if eq .Days 1}}class="on"{{end}} data-days="1">近 24 小时</a>
+        <a href="/admin/stats/html?days=7{{if .SiteParam}}&site={{.SiteParam}}{{end}}" {{if eq .Days 7}}class="on"{{end}} data-days="7">近 7 天</a>
+        <a href="/admin/stats/html?days=30{{if .SiteParam}}&site={{.SiteParam}}{{end}}" {{if eq .Days 30}}class="on"{{end}} data-days="30">近 30 天</a>
+        <a href="/admin/stats/html?days=90{{if .SiteParam}}&site={{.SiteParam}}{{end}}" {{if eq .Days 90}}class="on"{{end}} data-days="90">近 90 天</a>
       </div>
+      {{if not .IsBlog}}<a class="btn ghost small" href="/admin/stats/html?days={{.Days}}">← 本站</a>{{end}}
       <a class="btn ghost small" href="/admin/stats">JSON</a>
     </div>
   </div>
@@ -80,6 +81,7 @@
     </div></div>
   </div>
 
+  {{if .IsBlog}}
   <div class="card">
     <header><span class="t">剧集下载量</span><span class="hint">{{.WinLabel}}窗口 · 按次数排序</span></header>
     <div class="body">
@@ -96,10 +98,11 @@
       {{else}}<div class="empty">暂无下载记录</div>{{end}}
     </div>
   </div>
+  {{end}}
 
   {{if .Sites}}
   <div class="card">
-    <header><span class="t">多站总览（DAU）</span><span class="hint">各接入站 · 近 30 天</span></header>
+    <header><span class="t">多站总览（DAU）</span><span class="hint">各接入站 · 近 30 天 · 点站名进该站视图</span></header>
     <div class="body">
       <table class="tbl" style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
@@ -113,7 +116,7 @@
         <tbody>
           {{range .Sites}}
           <tr>
-            <td style="padding:4px 8px;" class="mono">{{.Name}}</td>
+            <td style="padding:4px 8px;" class="mono"><a class="link" href="/admin/stats/html?days={{$.Days}}{{if .Key}}&site={{.Key}}{{end}}">{{.Name}}</a></td>
             <td style="padding:4px 8px;text-align:right;">{{.TodayPV}} / {{.TodayUV}}</td>
             <td style="padding:4px 8px;text-align:right;">{{.WeekPV}} / {{.WeekUV}}</td>
             <td style="padding:4px 8px;text-align:right;">{{.MonthPV}} / {{.MonthUV}}</td>

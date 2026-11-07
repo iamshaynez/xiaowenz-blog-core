@@ -242,7 +242,9 @@ func (h *Handler) statsJSON(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// statsPage renders the same numbers as a table.
+// statsPage renders the same numbers as a table. ?site= 把整页切到该站口径
+// （空 = 本站博客 site=”）：总量/时间线/路径/来源全部跟随，剧集下载为本站
+// 专属卡片，仅默认口径显示。
 func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	days := 30
 	switch r.URL.Query().Get("days") {
@@ -257,19 +259,24 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	if days == 1 {
 		winLabel = "24 小时"
 	}
+	site := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("site")))
+	isBlog := site == ""
 	now := time.Now()
 	since := now.Add(-time.Duration(days) * 24 * time.Hour)
-	pv, uv, err := h.store.PageviewStats("", since.Unix())
+	pv, uv, err := h.store.PageviewStats(site, since.Unix())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	downloadsMap, err := h.store.DownloadStats(since.Unix())
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "query failed")
-		return
+	var downloads []DownloadRow
+	if isBlog {
+		downloadsMap, err := h.store.DownloadStats(since.Unix())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "query failed")
+			return
+		}
+		downloads = sortedDownloadRows(downloadsMap)
 	}
-	downloads := sortedDownloadRows(downloadsMap)
 	active, err := h.store.CountSubscribers("active", "")
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
@@ -283,13 +290,13 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 
 	// ── 时间线（补零成连续序列）＋ 路径/来源维度 ──
 	// 24 小时窗口切到小时粒度，否则柱子只有一两根。
-	cols, err := h.timelineCols(since, now, days)
+	cols, err := h.timelineCols(site, since, now, days)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 
-	pathsRaw, err := h.store.PathStats("", since.Unix(), 20)
+	pathsRaw, err := h.store.PathStats(site, since.Unix(), 20)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -303,7 +310,7 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, PathRow{PathStat: p, Share: share, Width: share})
 	}
 
-	refsRaw, err := h.store.ReferrerStats("", since.Unix(), 20)
+	refsRaw, err := h.store.ReferrerStats(site, since.Unix(), 20)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
@@ -331,14 +338,18 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 	if u, err := url.Parse(h.cfg.SiteURL); err == nil {
 		siteHost = strings.ToLower(u.Hostname())
 	}
+	siteLabel := "本站（" + siteHost + "）"
+	if !isBlog {
+		siteLabel = site
+	}
 	sites := make([]siteView, 0, len(siteRows))
 	for _, r := range siteRows {
 		name := r.Site
 		if name == "" {
-			name = siteHost + "（本站）"
+			name = "本站（" + siteHost + "）"
 		}
 		sites = append(sites, siteView{
-			Name: name, TodayPV: r.TodayPV, TodayUV: r.TodayUV,
+			Key: r.Site, Name: name, TodayPV: r.TodayPV, TodayUV: r.TodayUV,
 			WeekPV: r.WeekPV, WeekUV: r.WeekUV, MonthPV: r.MonthPV, MonthUV: r.MonthUV,
 		})
 	}
@@ -347,20 +358,23 @@ func (h *Handler) statsPage(w http.ResponseWriter, r *http.Request) {
 		"Title": "统计", "PV30": pv, "UV30": uv, "Days": days, "WinLabel": winLabel,
 		"ActiveSubs": active, "PendingComments": pending, "Downloads": downloads,
 		"Timeline": cols, "Paths": paths, "Referrers": refs, "Sites": sites,
+		"SiteParam": site, "SiteLabel": siteLabel, "IsBlog": isBlog,
 	})
 }
 
-// siteView 是多站总览表的一行（site=” 显示为本站域名）。
+// siteView 是多站总览表的一行（site=空 显示为本站域名；Key 为 URL 参数
+// 原值，空串 = 本站默认口径）。
 type siteView struct {
-	Name             string
+	Key, Name        string
 	TodayPV, TodayUV int
 	WeekPV, WeekUV   int
 	MonthPV, MonthUV int
 }
 
 // timelineCols 补零成连续序列；days==1 用小时粒度（日粒度在 24 小时窗口
-// 只剩一两根柱子）。ShowNum 标记需要在柱顶标出 PV 数字的列。
-func (h *Handler) timelineCols(since, now time.Time, days int) ([]DayCol, error) {
+// 只剩一两根柱子）。ShowNum 标记需要在柱顶标出 PV 数字的列。site 透传给
+// store 的站点过滤查询。
+func (h *Handler) timelineCols(site string, since, now time.Time, days int) ([]DayCol, error) {
 	heights := func(pv, uv, maxPV int) (int, int) {
 		if maxPV == 0 {
 			return 0, 0
@@ -377,7 +391,7 @@ func (h *Handler) timelineCols(since, now time.Time, days int) ([]DayCol, error)
 	}
 
 	if days == 1 {
-		sparse, err := h.store.PageviewTimeseriesHourly("", since.Unix())
+		sparse, err := h.store.PageviewTimeseriesHourly(site, since.Unix())
 		if err != nil {
 			return nil, err
 		}
@@ -410,7 +424,7 @@ func (h *Handler) timelineCols(since, now time.Time, days int) ([]DayCol, error)
 		return cols, nil
 	}
 
-	sparse, err := h.store.PageviewTimeseries("", since.Unix())
+	sparse, err := h.store.PageviewTimeseries(site, since.Unix())
 	if err != nil {
 		return nil, err
 	}
