@@ -108,3 +108,77 @@ func TestStatsPageMultiSiteOverview(t *testing.T) {
 		}
 	}
 }
+
+// ── 按站过滤：?site= 让整页（总量/时间线/路径/来源）切到该站口径 ──────
+
+// 过滤视图只看该站：ask 的路径出现、博客路径不混入；剧集下载（博客专属）
+// 隐藏；窗口 chips 保留 site 参数（切窗口不丢口径）。
+func TestStatsPageSiteFilter(t *testing.T) {
+	fx := newAdminFixture(t)
+	fx.store.PVRetention = 30 * 24 * time.Hour
+	if err := fx.store.RecordPageview("", "/blog/only.html", "", "h1", "ua"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.store.RecordPageview("ask.xiaowenz.com", "/ask/only.html", "", "a1", "ua"); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := authed(http.MethodGet, "/admin/stats/html?days=30&site=ask.xiaowenz.com", nil, login(t, fx.handler))
+	fx.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "/ask/only.html") {
+		t.Error("过滤视图缺 ask 站路径")
+	}
+	if strings.Contains(body, "/blog/only.html") {
+		t.Error("过滤视图混入了博客路径")
+	}
+	if !strings.Contains(body, `href="/admin/stats/html?days=7&site=ask.xiaowenz.com"`) {
+		t.Error("窗口 chips 未保留 site 参数")
+	}
+	if strings.Contains(body, "剧集下载量") {
+		t.Error("他站视图不应显示剧集下载卡")
+	}
+}
+
+// 默认视图：多站总览行可点进该站过滤视图（他站带 site=，本站回到默认）。
+func TestStatsPageSiteSwitchLinks(t *testing.T) {
+	fx := newAdminFixture(t)
+	fx.store.PVRetention = 30 * 24 * time.Hour
+	if err := fx.store.RecordPageview("ask.xiaowenz.com", "/q", "", "a1", "ua"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.store.RecordPageview("", "/blog/a", "", "h1", "ua"); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := authed(http.MethodGet, "/admin/stats/html?days=7", nil, login(t, fx.handler))
+	fx.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `href="/admin/stats/html?days=7&site=ask.xiaowenz.com"`) {
+		t.Error("多站总览 ask 行缺少进入该站视图的链接")
+	}
+	// 本站行回到默认口径：存在不带 site 的总览链接（days=7 的裸链接）。
+	if !strings.Contains(body, `href="/admin/stats/html?days=7"`) {
+		t.Error("多站总览本站行缺少回到默认视图的链接")
+	}
+}
+
+// 未知 site 值渲染空数据页，不 500。
+func TestStatsPageUnknownSiteEmpty(t *testing.T) {
+	fx := newAdminFixture(t)
+	rec := httptest.NewRecorder()
+	req := authed(http.MethodGet, "/admin/stats/html?days=7&site=nope.example.com", nil, login(t, fx.handler))
+	fx.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
