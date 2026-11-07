@@ -17,8 +17,10 @@ import (
 var settingsFlash = map[string]string{
 	"ok=media":  "媒体 R2 配置已保存",
 	"ok=backup": "备份 R2 配置已保存",
+	"ok=stats":  "统计站点已保存",
 
 	"err=r2config": "配置不合法，未保存",
+	"err=stats":    "统计站点不合法，未保存",
 }
 
 func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -39,9 +41,17 @@ func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.log.Warn("load backup r2 config", "err", err)
 	}
+	statsSites, err := sysconfig.LoadStatsSites(h.store)
+	if err != nil {
+		h.log.Warn("load stats sites", "err", err)
+	}
 
 	mediaUp := h.mediaClient != nil && h.mediaClient() != nil
 	backupUp := h.backups != nil && h.backups.Configured()
+	siteHost := ""
+	if u, err := url.Parse(h.cfg.SiteURL); err == nil {
+		siteHost = strings.ToLower(u.Hostname())
+	}
 
 	h.render(w, "settings.html", map[string]any{
 		"Title":           "系统参数",
@@ -57,7 +67,39 @@ func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
 		"Backup":          dbBackup,
 		"BackupSecretSet": dbBackup.Secret != "",
 		"BackupUp":        backupUp,
+		"StatsSites":      strings.Join(statsSites, "\n"),
+		"StatsSiteCount":  len(statsSites),
+		"SiteHost":        siteHost,
 	})
+}
+
+// statsSitesSave stores the multi-site stats beacon domain list. Entries are
+// normalized (scheme/port stripped, lowercase, deduped); anything that is not
+// a bare host rejects the whole submit — a half-parsed allowlist would fail
+// silently at beacon time.
+func (h *Handler) statsSitesSave(w http.ResponseWriter, r *http.Request) {
+	domains := sysconfig.ParseStatsSites(r.FormValue("domains"))
+	if msg := validateStatsSites(domains); msg != "" {
+		h.redirect(w, r, "/admin/settings?err=stats&detail="+url.QueryEscape(msg))
+		return
+	}
+	if err := sysconfig.SaveStatsSites(h.store, domains); err != nil {
+		h.log.Error("save stats sites", "err", err)
+		writeErr(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	h.log.Info("stats sites updated", "count", len(domains))
+	h.redirect(w, r, "/admin/settings?ok=stats")
+}
+
+// validateStatsSites rejects anything that is not a bare hostname.
+func validateStatsSites(domains []string) string {
+	for _, d := range domains {
+		if strings.ContainsAny(d, "/?#:@ ") || d != "localhost" && !strings.Contains(d, ".") {
+			return "每行一个纯域名（如 ask.xiaowenz.com），不要带路径/端口"
+		}
+	}
+	return ""
 }
 
 // mediaConfigSave stores the media R2 target. Blank secret keeps the stored

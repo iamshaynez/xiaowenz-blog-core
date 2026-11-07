@@ -96,5 +96,33 @@
       {{else}}<div class="empty">暂无下载记录</div>{{end}}
     </div>
   </div>
+
+  {{if .Sites}}
+  <div class="card">
+    <header><span class="t">多站总览（DAU）</span><span class="hint">各接入站 · 近 30 天</span></header>
+    <div class="body">
+      <table class="tbl" style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="text-align:left;color:var(--ink-2,#777);">
+            <th style="padding:4px 8px;">站点</th>
+            <th style="padding:4px 8px;text-align:right;">今日 PV/UV</th>
+            <th style="padding:4px 8px;text-align:right;">近 7 天 PV/UV</th>
+            <th style="padding:4px 8px;text-align:right;">近 30 天 PV/UV</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Sites}}
+          <tr>
+            <td style="padding:4px 8px;" class="mono">{{.Name}}</td>
+            <td style="padding:4px 8px;text-align:right;">{{.TodayPV}} / {{.TodayUV}}</td>
+            <td style="padding:4px 8px;text-align:right;">{{.WeekPV}} / {{.WeekUV}}</td>
+            <td style="padding:4px 8px;text-align:right;">{{.MonthPV}} / {{.MonthUV}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{end}}
 </main>
 </body></html>
