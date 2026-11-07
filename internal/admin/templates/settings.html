@@ -53,5 +53,19 @@
       <p class="hint" style="margin-top:10px;"><a class="link" href="/admin/backup">→ 去备份页测试连接 / 手动备份 / 改计划</a></p>
     </div>
   </div>
+
+  <div class="card">
+    <header><span class="t">统计站点（多站打点域名白名单）</span>
+      {{if .StatsSiteCount}}<span class="badge ok">{{.StatsSiteCount}} 个站点</span>{{else}}<span class="badge bad">未接入他站</span>{{end}}
+    </header>
+    <div class="body">
+      <p class="hint" style="margin-top:0;">在此登记的域名才允许向 <span class="mono">POST /api/pv</span> 打点（站点身份取自浏览器 Origin 头，客户端不可伪造）；本站（<span class="mono">{{.SiteHost}}</span>）天然在列，无需登记。每行一个纯域名；保存即时生效，无需重启。接入方法（各站贴一段内联 snippet，core 挂了不影响各站）见 <span class="mono">docs/multisite-stats.md</span>。</p>
+      <form method="POST" action="/admin/settings/stats-sites" style="display:grid;gap:12px;">
+        <label class="field" style="margin:0;"><span class="fl">域名清单（每行一个）</span>
+        <textarea name="domains" rows="5" class="mono" placeholder="ask.xiaowenz.com&#10;card.xiaowenz.com">{{.StatsSites}}</textarea></label>
+        <button class="btn primary" type="submit">保存统计站点</button>
+      </form>
+    </div>
+  </div>
 </main>
 </body></html>

@@ -8,6 +8,7 @@ package sysconfig
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/s3store"
 )
@@ -35,6 +36,11 @@ const (
 	SettingKeyBackupSecret   = "backup_r2_secret"
 	SettingKeyBackupBucket   = "backup_r2_bucket"
 )
+
+// SettingKeyStatsSites holds the newline/comma-separated list of extra site
+// domains allowed to send pageview beacons (multi-site stats). The site URL
+// itself (CORE_SITE_URL) is always allowed and needs no entry here.
+const SettingKeyStatsSites = "stats_sites"
 
 // MediaR2 is the console-managed media (public bucket) configuration.
 type MediaR2 struct {
@@ -137,6 +143,47 @@ func save(src SettingSource, kv map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// ParseStatsSites normalizes a raw domain list (accepts newline, comma or
+// space separators; tolerates pasted https:// prefixes): lowercase hosts,
+// de-duplicated, order preserved. Blank input parses to nil.
+func ParseStatsSites(raw string) []string {
+	var out []string
+	seen := map[string]bool{}
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == '\t' || r == ';'
+	})
+	for _, f := range fields {
+		f = strings.ToLower(strings.TrimSpace(f))
+		f = strings.TrimPrefix(f, "https://")
+		f = strings.TrimPrefix(f, "http://")
+		f = strings.TrimSuffix(f, "/")
+		// 打点比对的是 Origin 的 host（不带端口），端口顺手剥掉。
+		if i := strings.Index(f, ":"); i > 0 {
+			f = f[:i]
+		}
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	return out
+}
+
+// LoadStatsSites reads the registered beacon domains (normalized).
+func LoadStatsSites(src SettingSource) ([]string, error) {
+	raw, err := src.GetSetting(SettingKeyStatsSites)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", SettingKeyStatsSites, err)
+	}
+	return ParseStatsSites(raw), nil
+}
+
+// SaveStatsSites persists the beacon domain list (normalized, one per line).
+func SaveStatsSites(src SettingSource, domains []string) error {
+	return src.SetSetting(SettingKeyStatsSites, strings.Join(domains, "\n"))
 }
 
 // EffectiveMediaR2 resolves the effective media config field by field: a

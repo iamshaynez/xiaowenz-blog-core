@@ -70,11 +70,11 @@ func TestPageviewRecordAndStats(t *testing.T) {
 	s.now = func() time.Time { return now }
 
 	for _, pv := range [][2]string{{"/a", "h1"}, {"/a", "h2"}, {"/b", "h1"}} {
-		if err := s.RecordPageview(pv[0], "ref", pv[1], "ua"); err != nil {
+		if err := s.RecordPageview("", pv[0], "ref", pv[1], "ua"); err != nil {
 			t.Fatalf("RecordPageview: %v", err)
 		}
 	}
-	pv, uv, err := s.PageviewStats(now.Add(-30 * 24 * time.Hour).Unix())
+	pv, uv, err := s.PageviewStats("", now.Add(-30*24*time.Hour).Unix())
 	if err != nil {
 		t.Fatalf("PageviewStats: %v", err)
 	}
@@ -150,14 +150,14 @@ func TestPageviewTimeseries(t *testing.T) {
 	base := time.Date(2026, 10, 27, 12, 0, 0, 0, time.Local)
 	// D1：/a 两个访客 + /b 一个访客
 	s.now = func() time.Time { return base }
-	_ = s.RecordPageview("/a", "https://g.com", "ip1", "ua")
-	_ = s.RecordPageview("/a", "", "ip2", "ua")
-	_ = s.RecordPageview("/b", "", "ip1", "ua")
+	_ = s.RecordPageview("", "/a", "https://g.com", "ip1", "ua")
+	_ = s.RecordPageview("", "/a", "", "ip2", "ua")
+	_ = s.RecordPageview("", "/b", "", "ip1", "ua")
 	// D2：/a 一个回访访客
 	s.now = func() time.Time { return base.AddDate(0, 0, 1) }
-	_ = s.RecordPageview("/a", "https://t.co", "ip1", "ua")
+	_ = s.RecordPageview("", "/a", "https://t.co", "ip1", "ua")
 
-	ts, err := s.PageviewTimeseries(0)
+	ts, err := s.PageviewTimeseries("", 0)
 	if err != nil {
 		t.Fatalf("PageviewTimeseries: %v", err)
 	}
@@ -179,11 +179,11 @@ func TestPathStatsOrdered(t *testing.T) {
 		{"/blog/hot", "ip1"}, {"/blog/hot", "ip2"}, {"/blog/hot", "ip1"},
 		{"/blog/cold", "ip1"},
 	} {
-		if err := s.RecordPageview(x.path, "", x.ip, "ua"); err != nil {
+		if err := s.RecordPageview("", x.path, "", x.ip, "ua"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	paths, err := s.PathStats(0, 10)
+	paths, err := s.PathStats("", 0, 10)
 	if err != nil {
 		t.Fatalf("PathStats: %v", err)
 	}
@@ -201,11 +201,11 @@ func TestReferrerStatsGrouped(t *testing.T) {
 		{"https://google.com", "ip1"}, {"https://google.com", "ip2"},
 		{"", "ip1"}, {"", "ip3"}, {"", "ip1"},
 	} {
-		if err := s.RecordPageview("/p", x.ref, x.ip, "ua"); err != nil {
+		if err := s.RecordPageview("", "/p", x.ref, x.ip, "ua"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	refs, err := s.ReferrerStats(0, 10)
+	refs, err := s.ReferrerStats("", 0, 10)
 	if err != nil {
 		t.Fatalf("ReferrerStats: %v", err)
 	}
@@ -227,18 +227,18 @@ func TestPageviewTimeseriesHourly(t *testing.T) {
 
 	// 10 点两条（同 ip 去重）、11 点一条。
 	s.now = func() time.Time { return base }
-	if err := s.RecordPageview("/a", "", "h1", "ua"); err != nil {
+	if err := s.RecordPageview("", "/a", "", "h1", "ua"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RecordPageview("/a", "https://g.com", "h1", "ua"); err != nil {
+	if err := s.RecordPageview("", "/a", "https://g.com", "h1", "ua"); err != nil {
 		t.Fatal(err)
 	}
 	s.now = func() time.Time { return base.Add(time.Hour) }
-	if err := s.RecordPageview("/b", "", "h2", "ua"); err != nil {
+	if err := s.RecordPageview("", "/b", "", "h2", "ua"); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := s.PageviewTimeseriesHourly(base.Add(-time.Minute).Unix())
+	got, err := s.PageviewTimeseriesHourly("", base.Add(-time.Minute).Unix())
 	if err != nil {
 		t.Fatalf("PageviewTimeseriesHourly: %v", err)
 	}

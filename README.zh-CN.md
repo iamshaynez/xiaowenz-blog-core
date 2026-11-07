@@ -112,6 +112,7 @@ curl localhost:8080/healthz    # {"db":true,"ok":true}
 4. **对接 Hugo 站**：配置项、前端 JS 契约、播客 302 计数与验收清单见 [docs/HUGO.md](docs/HUGO.md)。
 4. Dockerfile 即交付物：多阶段构建（`golang:1.26-alpine` → `alpine`）、非 root 运行、`VOLUME /data`、`EXPOSE 8080`、`HEALTHCHECK /healthz`。CI 会执行 `docker build` 兜底。
 5. 备份：cron 定时快照（默认每天 04:00 UTC，「备份」页可改、即时生效）到私有桶 `backups/`，保留最近 7 份；R2 目标（endpoint/密钥/桶名）在「系统参数」页配置，可手动触发、可一键测试 R2 连通。
+6. 多站统计：把 core 用作多站 GA-lite——「系统参数」页「统计站点」卡片登记各站域名（即时生效），各站贴一段内联 snippet 即接入（`docs/multisite-stats.md`）；core 挂了不影响各站，DAU 见「统计」页多站总览。
 
 ## 安全与隐私要点
 

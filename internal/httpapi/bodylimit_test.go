@@ -40,6 +40,7 @@ func TestCommentRejectsOversizedBody(t *testing.T) {
 func TestPageviewRejectsOversizedBody(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/pv", oversizedBody())
+	req.Header.Set("Origin", "https://site.test")
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
@@ -49,7 +50,8 @@ func TestPageviewRejectsOversizedBody(t *testing.T) {
 
 func TestNormalSizedBodyStillAccepted(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	rec := doJSON(t, srv, http.MethodPost, "/api/pv", map[string]string{"path": "/ok"}, nil)
+	rec := doJSON(t, srv, http.MethodPost, "/api/pv", map[string]string{"path": "/ok"},
+		map[string]string{"Origin": "https://site.test"})
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("normal pv: status = %d, want 204", rec.Code)
 	}

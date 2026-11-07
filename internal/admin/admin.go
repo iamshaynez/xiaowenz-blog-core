@@ -137,6 +137,7 @@ func (h *Handler) Routes() http.Handler {
 	guarded.HandleFunc("GET /admin/settings", h.settingsPage)
 	guarded.HandleFunc("POST /admin/settings/media", h.mediaConfigSave)
 	guarded.HandleFunc("POST /admin/settings/backup", h.backupConfigSave)
+	guarded.HandleFunc("POST /admin/settings/stats-sites", h.statsSitesSave)
 	guarded.HandleFunc("GET /admin/backup", h.backupPage)
 	guarded.HandleFunc("POST /admin/backup/run", h.backupRun)
 	guarded.HandleFunc("POST /admin/backup/schedule", h.backupSchedule)

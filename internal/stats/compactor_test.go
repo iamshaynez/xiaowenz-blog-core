@@ -72,7 +72,7 @@ func TestRunOnceCompactsAndVacuums(t *testing.T) {
 		t.Errorf("freelist_count = %d after RunOnce, want 0（VACUUM 未回收）", fl)
 	}
 	// 全历史读数经永久层存活。
-	pv, uv, err := st.PageviewStats(0)
+	pv, uv, err := st.PageviewStats("", 0)
 	if err != nil {
 		t.Fatalf("PageviewStats: %v", err)
 	}

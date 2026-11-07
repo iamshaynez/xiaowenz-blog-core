@@ -149,3 +149,48 @@ func TestBackupClientFactory(t *testing.T) {
 		t.Error("factory() = nil with complete settings")
 	}
 }
+
+// ── 统计站点（多站打点域名白名单）──────────────────────────────
+
+func TestParseStatsSitesNormalizes(t *testing.T) {
+	got := ParseStatsSites("https://ask.xiaowenz.com, card.xiaowenz.com\n\n money.xiaowenz.com , ask.xiaowenz.com  ")
+	want := []string{"ask.xiaowenz.com", "card.xiaowenz.com", "money.xiaowenz.com"}
+	if len(got) != len(want) {
+		t.Fatalf("ParseStatsSites = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("entry %d = %q, want %q（去 scheme、小写、去重、保序）", i, got[i], want[i])
+		}
+	}
+	if ParseStatsSites("  \n , ") != nil {
+		t.Error("blank input must parse to nil")
+	}
+}
+
+func TestStatsSitesRoundTrip(t *testing.T) {
+	st := newSettingStore(t)
+	want := []string{"ask.xiaowenz.com", "card.xiaowenz.com"}
+	if err := SaveStatsSites(st, want); err != nil {
+		t.Fatalf("SaveStatsSites: %v", err)
+	}
+	got, err := LoadStatsSites(st)
+	if err != nil {
+		t.Fatalf("LoadStatsSites: %v", err)
+	}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("round trip = %v, want %v", got, want)
+	}
+}
+
+// 未配置时返回空列表（打点只认 CORE_SITE_URL 本站），不报错。
+func TestStatsSitesEmpty(t *testing.T) {
+	st := newSettingStore(t)
+	got, err := LoadStatsSites(st)
+	if err != nil {
+		t.Fatalf("LoadStatsSites unconfigured: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("unconfigured = %v, want empty", got)
+	}
+}
