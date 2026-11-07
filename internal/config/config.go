@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 // Config holds all runtime configuration, sourced exclusively from env vars.
@@ -42,6 +44,12 @@ type Config struct {
 	SendInterval time.Duration
 	// MailingAddress is the physical-address placeholder in newsletter footers.
 	MailingAddress string
+
+	// StatsCron schedules pageview compaction (rollup + prune + VACUUM).
+	// Default 03:30 — before the 04:00 backup, so snapshots are compacted.
+	StatsCron string
+	// PageviewRetentionDays bounds the raw pageviews table (default 30).
+	PageviewRetentionDays int
 }
 
 // IsProd reports whether the service runs in production mode.
@@ -88,7 +96,9 @@ func Load() (*Config, error) {
 		MailingAddress:  os.Getenv("CORE_MAILING_ADDRESS"),
 		SendInterval:    time.Second,
 		SMTPPort:        587,
+		StatsCron:       envOr("CORE_STATS_CRON", "30 3 * * *"),
 	}
+	cfg.PageviewRetentionDays = 30
 
 	if p := os.Getenv("CORE_SMTP_PORT"); p != "" {
 		n, err := strconv.Atoi(p)
@@ -103,6 +113,21 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("CORE_SEND_INTERVAL_MS: %w", err)
 		}
 		cfg.SendInterval = time.Duration(n) * time.Millisecond
+	}
+
+	if v := os.Getenv("CORE_PAGEVIEW_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("CORE_PAGEVIEW_RETENTION_DAYS: %w", err)
+		}
+		// 下限 2 天：rollup 只聚合完结日，至少要有一个完结日先于清理边界。
+		if n < 2 || n > 3650 {
+			return nil, fmt.Errorf("CORE_PAGEVIEW_RETENTION_DAYS must be 2..3650, got %d", n)
+		}
+		cfg.PageviewRetentionDays = n
+	}
+	if _, err := cron.ParseStandard(cfg.StatsCron); err != nil {
+		return nil, fmt.Errorf("CORE_STATS_CRON: %w", err)
 	}
 
 	if v := os.Getenv("CORE_TRUSTED_PROXIES"); v != "" {

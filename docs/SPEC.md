@@ -32,7 +32,8 @@
 - `comments`: id, post_slug, author_name, author_email（不公开）, content, status(`pending|approved|rejected`), ip_hash, ua, created_at, moderated_at
 - `newsletters`: id, subject, markdown, html, status(`draft|sending|sent|failed`), sent_count, failed_count, created_at, sent_at
 - `downloads`: id, slug, ip_hash, ua, referer, created_at ；统计口径=按 (slug, ip_hash, 日) 去重
-- `pageviews`: id, path, referrer, ip_hash, ua, created_at
+- `pageviews`: id, path, referrer, ip_hash, ua, site, created_at —— **有界热层**：只保留 `CORE_PAGEVIEW_RETENTION_DAYS`（默认 30）天，行宽刻意瘦身（ip_hash 16 hex、ua 只存设备分类单字符）；site 维度为多站统计预留（当前恒空串）
+- `daily_stats`（迁移 0003）: site, day, pv, uv, PK(site, day) —— **永久日聚合层**：夜间压缩任务把完结日从 pageviews 精确重算（同日 ip_hash 去重）upsert 进来，随后清掉保留期外的明细。ip_hash 按日加盐意味着跨日访客本就不可链接：多日 UV=各日去重之和，清理明细对指标无损
 - `media`: id, key UNIQUE, url, bytes, content_type, created_at
 - `send_log`: id, newsletter_id, subscriber_id, status, error, created_at
 
@@ -59,6 +60,7 @@
 ### 3.3 统计
 - `POST /api/pv` `{path, referrer}` → 204；尊重 `DNT: 1`（直接丢弃）；限流 60 次/分/IP。
 - `GET /a/{slug}.mp3` → 查 media 表 key=`audio/{slug}.mp3`：命中记 download（含 Range 请求也记，但同日同 IP 去重只算一次）→ 302 到 R2 URL；未命中 404。
+- **存储分两层**（防 DB 无界膨胀）：raw `pageviews` 只留保留期内（路径/来源/小时等明细维度的数据地基）；`daily_stats` 永久存逐日 PV/UV。读数规则：窗口落在保留期内走 raw 精确路径（精确到时间戳）；更宽的窗口合并 daily_stats + 尚未聚合的 raw 天（rollup 缺位自愈、同日不双计）。夜间压缩（`CORE_STATS_CRON`，默认 `30 3 * * *`，先于 04:00 备份让快照已是压缩后的小库）：rollup → prune 同事务保序（未聚合的天绝不被删）→ 有删除时 wal_checkpoint+VACUUM（DELETE 不缩文件，VACUUM 才真还给文件系统）；启动即跑一次（部署即完成首次压缩，也补上停机错过的夜晚）。
 
 ### 3.4 健康检查
 - `GET /healthz` → `{"ok":true,"db":true}`（db ping 失败则 503）。
@@ -70,7 +72,7 @@
 认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（365 天，HttpOnly/Secure/SameSite=Lax；管理台为个人低频工具，长期免重登录）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
 
 - `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量（条形图）与最近待审评论就地审核。
-- `GET /admin/stats/html?days=1|7|30|90` 流量分析台：总量卡、**浏览时间线**（PV/UV 双柱、零流量桶补零、柱顶标 PV 数字；days=1 时切小时粒度，其余日粒度）、**热门路径 TOP 20**（PV/UV/占比）、**访问来源 TOP 20**（占比条；空 referrer 显示"直接访问"）、剧集下载量；四档时间窗同时作用于概要卡、时间线与路径/来源榜。日界按进程本地时区（部署侧 `TZ` 对齐受众时区，容器镜像含 tzdata）。
+- `GET /admin/stats/html?days=1|7|30|90` 流量分析台：总量卡、**浏览时间线**（PV/UV 双柱、零流量桶补零、柱顶标 PV 数字；days=1 时切小时粒度，其余日粒度）、**热门路径 TOP 20**（PV/UV/占比）、**访问来源 TOP 20**（占比条；空 referrer 显示"直接访问"）、剧集下载量；四档时间窗同时作用于概要卡、时间线与路径/来源榜。时间线与总量在 90 天窗下由 daily_stats 永久层支撑（明细清理后历史日照常出数）；路径/来源榜依赖 raw 明细，覆盖保留期（默认 30 天）。日界按进程本地时区（部署侧 `TZ` 对齐受众时区，容器镜像含 tzdata）。
 - Newsletter 删除：`POST /admin/newsletters/{id}/delete`（草稿/已发可删，**sending 在途拒删 409**；已发删除连带清理 send_log，事务内完成不留孤儿投递记录）。
 - Newsletter 从文章导入：`POST /admin/newsletters/import`（表单 `url`）→ 抓取已公网上线的博客文章，标题进主题、`og:description`/`meta description` 进导语、原文链接进正文，直接落 **draft**（绝不自动发送）。URL 的 host 必须落在 `CORE_SITE_URL` 派生的域名后缀内（如 `blog.xiaowenz.com` → 允许 `xiaowenz.com` 与 `*.xiaowenz.com`），站外一律 400（SSRF 防线）；抓取 10s 超时、正文上限 1 MiB、非 200 → 502。
 - 分发管理：`GET /admin/distribution`（媒体库入口）——feed 自检（enclosure 字节 ↔ 媒体库勾稽）、Apple 目录比对（iTunes 公开 lookup API：已收录最新一集、滞后天数、登记的 feed 域名哨兵）、小宇宙节目页配置与机制说明；平台配置（`apple_show_id`/`apple_country`/`xiaoyuzhou_url`）经 `POST /admin/distribution/settings` 存 settings 表。Apple 无可用 ping 端点，官方刷新路径是 Podcasts Connect 手动刷新；收录节奏 ≤24h。
