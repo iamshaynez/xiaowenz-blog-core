@@ -86,7 +86,7 @@ func (c *Compactor) RunOnce(ctx context.Context) (rolled, pruned int64, err erro
 	}
 	defer c.mu.Unlock()
 
-	rolled, pruned, err = c.store.CompactPageviews(c.Retention)
+	rolled, pruned, err = c.store.CompactPageviews(c.now(), c.Retention)
 	if err != nil {
 		return 0, 0, fmt.Errorf("compact pageviews: %w", err)
 	}
