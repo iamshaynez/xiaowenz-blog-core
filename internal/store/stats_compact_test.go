@@ -66,7 +66,7 @@ func TestCompactPageviewsRollsUpThenPrunes(t *testing.T) {
 	_ = s.RecordPageview("", "/today", "", "ipT1", "ua")
 
 	s.now = func() time.Time { return now }
-	rolled, pruned, err := s.CompactPageviews(30 * 24 * time.Hour)
+	rolled, pruned, err := s.CompactPageviews(s.now(), 30*24*time.Hour)
 	if err != nil {
 		t.Fatalf("CompactPageviews: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCompactPageviewsRollsUpThenPrunes(t *testing.T) {
 	}
 
 	// 幂等：重跑数值稳定，已聚合的旧日不受影响。
-	rolled2, pruned2, err := s.CompactPageviews(30 * 24 * time.Hour)
+	rolled2, pruned2, err := s.CompactPageviews(s.now(), 30*24*time.Hour)
 	if err != nil {
 		t.Fatalf("CompactPageviews again: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestPageviewStatsSurvivePrune(t *testing.T) {
 	_ = s.RecordPageview("", "/today", "", "ipT", "ua")
 
 	s.now = func() time.Time { return now }
-	if _, _, err := s.CompactPageviews(30 * 24 * time.Hour); err != nil {
+	if _, _, err := s.CompactPageviews(s.now(), 30*24*time.Hour); err != nil {
 		t.Fatalf("CompactPageviews: %v", err)
 	}
 
@@ -179,7 +179,7 @@ func TestPageviewTimeseriesNoDoubleCount(t *testing.T) {
 
 	s.now = func() time.Time { return now }
 	// 只聚合不清理：昨天的 raw 行还在，rollup 行也在。
-	if _, _, err := s.CompactPageviews(365 * 24 * time.Hour); err != nil {
+	if _, _, err := s.CompactPageviews(s.now(), 365*24*time.Hour); err != nil {
 		t.Fatalf("CompactPageviews: %v", err)
 	}
 

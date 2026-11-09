@@ -641,15 +641,20 @@ func (s *Store) RecordPageview(site, path, referrer, ipHash, ua string) error {
 
 // CompactPageviews rolls complete days of raw pageviews into daily_stats,
 // then deletes rows older than retention — in that order, in one transaction,
-// so no day is deleted before it is aggregated. Today (an incomplete day) is
-// neither rolled nor pruned. Rolled values are exact recomputations (same-day
-// ip_hash dedup), so re-running is idempotent; rollup rows survive their raw
-// data being pruned. Returns days rolled and rows pruned.
-func (s *Store) CompactPageviews(retention time.Duration) (rolled, pruned int64, err error) {
+// so no day is deleted before it is aggregated. Today (an incomplete day,
+// by the passed clock's localtime) is neither rolled nor pruned. Rolled
+// values are exact recomputations (same-day ip_hash dedup), so re-running is
+// idempotent; rollup rows survive their raw data being pruned. Returns days
+// rolled and rows pruned.
+//
+// now is a parameter (not s.now()) so the caller — the stats Compactor —
+// owns the clock end to end; a Compactor with a frozen test clock used to
+// leak the store's real clock here and roll "today" once reality passed the
+// frozen date (2026-11-08 CI detonation).
+func (s *Store) CompactPageviews(now time.Time, retention time.Duration) (rolled, pruned int64, err error) {
 	if retention < 2*24*time.Hour {
 		return 0, 0, fmt.Errorf("pageview retention %s too short: a day must fit whole", retention)
 	}
-	now := s.now()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, 0, fmt.Errorf("compact pageviews: %w", err)
