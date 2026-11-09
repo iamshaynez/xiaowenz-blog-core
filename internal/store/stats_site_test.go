@@ -74,7 +74,7 @@ func TestRollupAndCompactPerSite(t *testing.T) {
 	_ = s.RecordPageview("ask.xiaowenz.com", "/q", "", "h3", "ua")
 
 	s.now = func() time.Time { return now }
-	if _, _, err := s.CompactPageviews(365 * 24 * time.Hour); err != nil {
+	if _, _, err := s.CompactPageviews(s.now(), 365*24*time.Hour); err != nil {
 		t.Fatalf("CompactPageviews: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestSiteStatsWindows(t *testing.T) {
 	_ = s.RecordPageview("card.xiaowenz.com", "/", "", "c1", "ua")
 
 	s.now = func() time.Time { return now }
-	if _, _, err := s.CompactPageviews(365 * 24 * time.Hour); err != nil {
+	if _, _, err := s.CompactPageviews(s.now(), 365*24*time.Hour); err != nil {
 		t.Fatalf("CompactPageviews: %v", err)
 	}
 
