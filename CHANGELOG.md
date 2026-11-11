@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Full-codebase review pass (architecture, quality, bugs). All changes test-first.
 
+### Added (newsletter full-article email & selective sending)
+
+- **全文邮件**：文章导入改为抓取主题正文容器（玄墨 `div.article__body`，兼容
+  `e-content`/`itemprop=articleBody`）整篇正文，经邮件化清洗（相对 URL 以文章
+  地址绝对化、清 schema/script 噪音、注入邮件客户端安全 inline style）后落库；
+  无容器回退摘要模式。邮件壳重设计：页眉「三杯过后 · 专栏博客文章订阅」、文章
+  大标题、全文、「阅读原文」按钮、退订页脚；text 备选改为正文真实纯文本
+  （`newsletters` 新增 `post_url` 列，迁移 0004；新依赖 `golang.org/x/net`）。
+- **HTML 全邮件预览**：`GET /admin/newsletters/{id}/preview` 渲染订阅者视角
+  完整邮件（与发送同一壳，退订链接 `#` 占位），草稿页 iframe 所见即所得。
+- **选择发送与补发**：草稿页收件人选择器（全部/已发送/待发送统计、邮箱搜索、
+  已发送置灰），`POST send` 携带 `ids[]`，空选择 400；收件人 = 勾选 ∩ active ∩
+  尚未送达，**同一邮箱地址绝不发第二次**（send_log `status='sent'` 判重，
+  failed 可重试）；一轮结束仍有未送达回 draft 等补发（计数累加），全部送达才
+  置 sent。
+
 ### Added (per-site drill-down on the stats page)
 
 - **统计页按站过滤**：`GET /admin/stats/html?site=<host>` 把整页（总量卡/时间线/
