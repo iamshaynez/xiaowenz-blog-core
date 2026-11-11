@@ -16,6 +16,7 @@ import (
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/config"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/store"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/sysconfig"
 )
 
 // Sender fans a draft out to active subscribers, one goroutine per send run.
@@ -94,13 +95,20 @@ func (s *Sender) run(id int64, subscriberIDs []int64) {
 		return
 	}
 
+	bio, err := sysconfig.LoadNewsletterBio(s.store)
+	if err != nil {
+		s.log.Warn("send: load bio", "id", id, "err", err)
+		bio = ""
+	}
+	bio = sysconfig.EffectiveNewsletterBio(bio, s.cfg.NewsletterBio)
+
 	sent, failed := 0, 0
 	for i, sub := range subs {
 		if i > 0 && s.cfg.SendInterval > 0 {
 			// Pace AFTER the first message: a one-recipient run need not sleep.
 			sleep(s.cfg.SendInterval)
 		}
-		if err := s.sendOne(n, sub); err != nil {
+		if err := s.sendOne(n, sub, bio); err != nil {
 			failed++
 			s.log.Warn("send: recipient failed", "id", id, "email", sub.Email, "err", err)
 			if lerr := s.store.InsertSendLog(id, sub.ID, "failed", err.Error()); lerr != nil {
@@ -164,8 +172,9 @@ func (s *Sender) settle(id int64, sent, failed int) error {
 	return s.store.MarkNewsletterSent(id, sent, failed)
 }
 
-// sendOne renders the per-recipient shell and delivers it.
-func (s *Sender) sendOne(n *store.Newsletter, sub store.Subscriber) error {
+// sendOne renders the per-recipient shell and delivers it. bio is resolved
+// once per run (footer「我是谁 WHO AM I」block).
+func (s *Sender) sendOne(n *store.Newsletter, sub store.Subscriber, bio string) error {
 	unsubURL := s.cfg.BaseURL + "/api/unsub?token=" + sub.UnsubToken
 	html, text, err := mailer.RenderNewsletter(mailer.NewsletterShell{
 		Title:          n.Subject,
@@ -173,6 +182,7 @@ func (s *Sender) sendOne(n *store.Newsletter, sub store.Subscriber) error {
 		BodyHTML:       template.HTML(n.HTML),
 		UnsubURL:       unsubURL,
 		MailingAddress: s.cfg.MailingAddress,
+		Bio:            bio,
 	})
 	if err != nil {
 		return fmt.Errorf("render: %w", err)

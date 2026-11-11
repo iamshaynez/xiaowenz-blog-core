@@ -1,21 +1,34 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><title>三杯过后</title></head>
-<body style="font-family:system-ui,-apple-system,'PingFang SC','Hiragino Sans GB',sans-serif;margin:0;padding:0;background:#f7f7f7;">
-  <div style="max-width:600px;margin:0 auto;background:#fff;padding:36px 32px;color:#222;">
-    <header style="border-bottom:2px solid #222;padding-bottom:12px;margin-bottom:28px;">
-      <strong style="font-size:15px;letter-spacing:.05em;">三杯过后</strong>
-      <span style="font-size:12px;color:#888;"> · 专栏博客文章订阅</span>
+<body style="margin:0;padding:0;background:#F1F1EF;">
+  <div style="max-width:600px;margin:0 auto;padding:32px 24px;color:#141210;font-family:'Noto Serif SC','Songti SC','STSong','SimSun',Georgia,'Times New Roman',serif;font-size:17px;line-height:1.85;letter-spacing:0.01em;">
+    <header style="border-bottom:1px solid #D8D6D1;padding-bottom:24px;margin-bottom:28px;">
+      <p style="margin:0 0 20px;font-size:0;">
+        <span style="display:inline-block;width:32px;height:2px;background:#CE1432;vertical-align:middle;"></span>
+        <span style="font-family:'Noto Sans SC','PingFang SC','Hiragino Sans GB',sans-serif;font-size:12px;font-weight:500;letter-spacing:0.28em;color:#CE1432;">三杯过后 · 专栏博客文章订阅</span>
+      </p>
+      {{if .Title}}<h1 style="margin:0;font-size:26px;line-height:1.3;font-weight:700;letter-spacing:-0.02em;">{{.Title}}</h1>{{end}}
     </header>
-    {{if .Title}}<h1 style="font-size:24px;line-height:1.45;margin:0 0 24px;font-weight:700;">{{.Title}}</h1>{{end}}
-    <main style="font-size:16px;">{{.BodyHTML}}</main>
-    {{if .PostURL}}<p style="margin:32px 0 0;">
-      <a href="{{.PostURL}}" style="display:inline-block;background:#222;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:6px;font-size:15px;">阅读原文</a>
+    <main>{{.BodyHTML}}</main>
+    {{if .PostURL}}<p style="margin:36px 0 0;">
+      <a href="{{.PostURL}}" style="display:inline-block;background:#141210;color:#EDEAE3;text-decoration:none;padding:12px 28px;border-radius:2px;font-family:'Noto Sans SC','PingFang SC',sans-serif;font-size:14px;letter-spacing:0.08em;">阅读原文</a>
     </p>{{end}}
-    <footer style="border-top:1px solid #ddd;margin-top:36px;padding-top:16px;color:#888;font-size:12px;line-height:1.7;">
-      <p style="margin:0 0 4px;">你收到本邮件是因为订阅了「三杯过后」专栏博客文章订阅。</p>
-      <p style="margin:0 0 8px;"><a href="{{.UnsubURL}}" style="color:#888;">退订本通讯</a></p>
-      <p style="margin:0;">{{.MailingAddress}}</p>
+    <footer style="border-top:1px solid #D8D6D1;margin-top:36px;padding-top:24px;">
+      {{if .BioHTML}}
+      <div style="margin-bottom:28px;">
+        <p style="margin:0 0 12px;font-size:0;">
+          <span style="display:inline-block;width:24px;height:2px;background:#CE1432;vertical-align:middle;"></span>
+          <span style="font-family:'Noto Sans SC','PingFang SC',sans-serif;font-size:11px;font-weight:500;letter-spacing:0.28em;color:#CE1432;">我是谁 WHO AM I</span>
+        </p>
+        <div style="font-size:15px;line-height:1.9;color:#5A544C;">{{.BioHTML}}</div>
+      </div>
+      {{end}}
+      <p style="margin:0 0 6px;font-family:'Noto Sans SC','PingFang SC',sans-serif;font-size:12px;line-height:1.7;color:#9A948C;">
+        你收到本邮件是因为订阅了「三杯过后」。<br>
+        <a href="{{.UnsubURL}}" style="color:#9A948C;text-decoration:underline;text-decoration-color:#CE1432;">退订本通讯</a>
+      </p>
+      <p style="margin:0;font-family:'Noto Sans SC','PingFang SC',sans-serif;font-size:12px;color:#9A948C;">{{.MailingAddress}}</p>
     </footer>
   </div>
 </body>

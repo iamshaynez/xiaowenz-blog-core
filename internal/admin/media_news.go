@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/sysconfig"
 	"github.com/yuin/goldmark"
 )
 
@@ -102,12 +103,18 @@ func (h *Handler) newsletterPreview(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
+	bio, err := sysconfig.LoadNewsletterBio(h.store)
+	if err != nil {
+		h.log.Warn("load newsletter bio", "err", err)
+		bio = ""
+	}
 	html, _, err := mailer.RenderNewsletter(mailer.NewsletterShell{
 		Title:          n.Subject,
 		PostURL:        n.PostURL,
 		BodyHTML:       template.HTML(n.HTML), // trusted: admin-authored
 		UnsubURL:       "#",
 		MailingAddress: h.cfg.MailingAddress,
+		Bio:            sysconfig.EffectiveNewsletterBio(bio, h.cfg.NewsletterBio),
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "render failed")

@@ -252,3 +252,96 @@ func TestSMTPAgainstFakeServer(t *testing.T) {
 		t.Errorf("subject not encoded: %s", msg)
 	}
 }
+
+// 杂志化排版（玄墨基因）：纸底、红 eyebrow、宋体衬线正文、黑按钮。
+func TestRenderNewsletterMagazineStyle(t *testing.T) {
+	html, _, err := RenderNewsletter(NewsletterShell{
+		Title:    "文章标题",
+		PostURL:  "https://x.com/p.html",
+		BodyHTML: "<p>正文</p>",
+		UnsubURL: "https://u.example/unsub",
+		Bio:      "我是晓文。\n写代码也写字。",
+	})
+	if err != nil {
+		t.Fatalf("RenderNewsletter: %v", err)
+	}
+	for _, want := range []string{
+		"#F1F1EF",                       // 纸底
+		"#CE1432",                       // 冷漆红点睛（eyebrow 线/字）
+		"专栏博客文章订阅",                      // eyebrow 文案
+		"'Noto Serif SC'",               // 宋体衬线栈
+		"我是谁 WHO AM I",                  // bio 区块小标题
+		"我是晓文。<br>",                     // bio 多行转 <br>
+		"text-decoration-color:#CE1432", // 链接红下划线
+		"background:#141210",            // 玄黑「阅读原文」按钮
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("杂志化邮件缺 %q", want)
+		}
+	}
+}
+
+// bio 为空时整个「我是谁」区块不渲染。
+func TestRenderNewsletterBioEmptyHidesBlock(t *testing.T) {
+	html, text, err := RenderNewsletter(NewsletterShell{
+		Title:    "t",
+		BodyHTML: "<p>x</p>",
+		UnsubURL: "https://u.example/unsub",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(html, "WHO AM I") || strings.Contains(html, "我是谁") {
+		t.Error("空 bio 不应渲染「我是谁」区块")
+	}
+	if strings.Contains(text, "我是谁") {
+		t.Error("text 版同理")
+	}
+}
+
+// BioToHTML：HTML 转义 + 换行转 <br>（bio 是管理员输入的纯文本）。
+func TestBioToHTML(t *testing.T) {
+	got := BioToHTML("<b>加粗</b>\n第二行")
+	if strings.Contains(string(got), "<b>") {
+		t.Errorf("未转义 HTML: %q", got)
+	}
+	if !strings.Contains(string(got), "&lt;b&gt;加粗&lt;/b&gt;<br>第二行") {
+		t.Errorf("转义/换行结果不对: %q", got)
+	}
+	if BioToHTML("  ") != "" {
+		t.Error("空白输入应得空串")
+	}
+}
+
+// text 备选含 bio 原文（保留换行）。
+func TestRenderNewsletterTextCarriesBio(t *testing.T) {
+	_, text, err := RenderNewsletter(NewsletterShell{
+		Title:    "t",
+		BodyHTML: "<p>正文</p>",
+		UnsubURL: "https://u.example/unsub",
+		Bio:      "第一行介绍\n第二行介绍",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "我是谁 WHO AM I") || !strings.Contains(text, "第一行介绍\n第二行介绍") {
+		t.Errorf("text 版缺 bio: %q", text)
+	}
+}
+
+// 首字下沉：顶层第一个 p 的首个字符包 float span；首子节点是元素时跳过。
+func TestEmailizeHTMLDropCap(t *testing.T) {
+	got := EmailizeHTML("<p>你好，世界。</p><p>第二段。</p>", "")
+	if !strings.Contains(got, `<span style="float:left;`) {
+		t.Errorf("首字未下沉: %s", got)
+	}
+	if !strings.Contains(got, `>你</span>`) {
+		t.Errorf("下沉的应是首字「你」: %s", got)
+	}
+	if got2 := EmailizeHTML("<p><strong>整段加粗</strong></p>", ""); strings.Contains(got2, "float:left") {
+		t.Errorf("首子节点是元素时应跳过: %s", got2)
+	}
+	if got3 := EmailizeHTML("<h2>标题先行</h2><p>再有正文</p>", ""); !strings.Contains(got3, "float:left") {
+		t.Errorf("首个顶层 p（即使前面有标题）应下沉: %s", got3)
+	}
+}

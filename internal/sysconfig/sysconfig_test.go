@@ -1,6 +1,7 @@
 package sysconfig
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/iamshaynez/xiaowenz-blog-core/internal/s3store"
@@ -192,5 +193,59 @@ func TestStatsSitesEmpty(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("unconfigured = %v, want empty", got)
+	}
+}
+
+// 个人介绍（Newsletter 页脚「我是谁」区块）：round-trip 保多行原文。
+func TestNewsletterBioRoundTrip(t *testing.T) {
+	st := newSettingStore(t)
+	want := "我是晓文，写代码也写字。\n在一家小公司做技术负责人。\n博客：三杯过后。"
+	if err := SaveNewsletterBio(st, want); err != nil {
+		t.Fatalf("SaveNewsletterBio: %v", err)
+	}
+	got, err := LoadNewsletterBio(st)
+	if err != nil {
+		t.Fatalf("LoadNewsletterBio: %v", err)
+	}
+	if got != want {
+		t.Errorf("round trip = %q, want %q", got, want)
+	}
+}
+
+// Effective 回退：数据库配置优先，空则回退 env（CORE_NEWSLETTER_BIO）。
+func TestEffectiveNewsletterBio(t *testing.T) {
+	if got := EffectiveNewsletterBio("来自后台", "来自env"); got != "来自后台" {
+		t.Errorf("db 优先失败: %q", got)
+	}
+	if got := EffectiveNewsletterBio("", "来自env"); got != "来自env" {
+		t.Errorf("env 回退失败: %q", got)
+	}
+	if got := EffectiveNewsletterBio("", ""); got != "" {
+		t.Errorf("双空应为空: %q", got)
+	}
+}
+
+// 超长个人介绍整单拒绝（防邮件爆炸，上限 2000 字符）。
+func TestNewsletterBioTooLongRejected(t *testing.T) {
+	st := newSettingStore(t)
+	long := strings.Repeat("字", 2001)
+	if err := SaveNewsletterBio(st, long); err == nil {
+		t.Fatal("超长 bio 必须报错")
+	}
+	got, _ := LoadNewsletterBio(st)
+	if got != "" {
+		t.Errorf("被拒绝的值不应落库: %q", got)
+	}
+}
+
+// 保存时归一化：首尾空白剔除，中间换行保留。
+func TestNewsletterBioNormalized(t *testing.T) {
+	st := newSettingStore(t)
+	if err := SaveNewsletterBio(st, "  你好。\n我是晓文。 \n"); err != nil {
+		t.Fatalf("SaveNewsletterBio: %v", err)
+	}
+	got, _ := LoadNewsletterBio(st)
+	if got != "你好。\n我是晓文。" {
+		t.Errorf("归一化结果 = %q", got)
 	}
 }

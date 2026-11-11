@@ -70,13 +70,28 @@ type NewsletterShell struct {
 	BodyHTML       template.HTML // 邮件化后的全文正文（EmailizeHTML 产物）
 	UnsubURL       string        // 收件人专属退订链接
 	MailingAddress string
+	Bio            string // 页脚「我是谁 WHO AM I」多行介绍（空 = 隐藏区块）
 }
 
-// RenderNewsletter wraps the full-article body in the brand shell: 页眉品牌
-// 行、文章标题、全文、「阅读原文」按钮与退订页脚。text 备选携带真实正文
-// 纯文本，不再是占位文案。
+// BioToHTML 把管理员输入的多行纯文本 bio 转为邮件 HTML：HTML 转义 +
+// 换行转 <br>；空白输入得空串。
+func BioToHTML(text string) template.HTML {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	return template.HTML(strings.ReplaceAll(template.HTMLEscapeString(text), "\n", "<br>"))
+}
+
+// RenderNewsletter wraps the full-article body in the brand shell（玄墨杂志
+// 风格）：红 eyebrow 品牌行、衬线大标题、全文、「阅读原文」玄黑按钮与
+// 页脚（bio 区块 + 退订）。text 备选携带真实正文纯文本。
 func RenderNewsletter(s NewsletterShell) (html, text string, err error) {
-	html, err = render("newsletter.html", s)
+	data := struct {
+		NewsletterShell
+		BioHTML template.HTML
+	}{s, BioToHTML(s.Bio)}
+	html, err = render("newsletter.html", data)
 	if err != nil {
 		return "", "", err
 	}
@@ -90,6 +105,10 @@ func RenderNewsletter(s NewsletterShell) (html, text string, err error) {
 	if s.PostURL != "" {
 		b.WriteString("阅读原文：" + s.PostURL + "\n\n")
 	}
-	b.WriteString("——\n「三杯过后」专栏博客文章订阅\n退订本通讯：" + s.UnsubURL + "\n" + s.MailingAddress + "\n")
+	b.WriteString("——\n「三杯过后」专栏博客文章订阅\n")
+	if s.Bio != "" {
+		b.WriteString("\n我是谁 WHO AM I\n" + s.Bio + "\n\n")
+	}
+	b.WriteString("退订本通讯：" + s.UnsubURL + "\n" + s.MailingAddress + "\n")
 	return html, b.String(), nil
 }

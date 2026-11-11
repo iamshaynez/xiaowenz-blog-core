@@ -18,9 +18,11 @@ var settingsFlash = map[string]string{
 	"ok=media":  "媒体 R2 配置已保存",
 	"ok=backup": "备份 R2 配置已保存",
 	"ok=stats":  "统计站点已保存",
+	"ok=bio":    "个人介绍已保存",
 
 	"err=r2config": "配置不合法，未保存",
 	"err=stats":    "统计站点不合法，未保存",
+	"err=bio":      "个人介绍超长，未保存",
 }
 
 func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +46,10 @@ func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
 	statsSites, err := sysconfig.LoadStatsSites(h.store)
 	if err != nil {
 		h.log.Warn("load stats sites", "err", err)
+	}
+	bio, err := sysconfig.LoadNewsletterBio(h.store)
+	if err != nil {
+		h.log.Warn("load newsletter bio", "err", err)
 	}
 
 	mediaUp := h.mediaClient != nil && h.mediaClient() != nil
@@ -70,6 +76,8 @@ func (h *Handler) settingsPage(w http.ResponseWriter, r *http.Request) {
 		"StatsSites":      strings.Join(statsSites, "\n"),
 		"StatsSiteCount":  len(statsSites),
 		"SiteHost":        siteHost,
+		"Bio":             bio,
+		"BioEnvSet":       h.cfg.NewsletterBio != "",
 	})
 }
 
@@ -100,6 +108,19 @@ func validateStatsSites(domains []string) string {
 		}
 	}
 	return ""
+}
+
+// newsletterBioSave stores the newsletter footer bio（「我是谁 WHO AM I」
+// 多行介绍）。空文本 = 清空（邮件页脚隐藏区块）；超长整单拒绝。
+func (h *Handler) newsletterBioSave(w http.ResponseWriter, r *http.Request) {
+	bio := strings.ReplaceAll(r.FormValue("bio"), "\r\n", "\n")
+	if err := sysconfig.SaveNewsletterBio(h.store, bio); err != nil {
+		h.log.Warn("newsletter bio rejected", "err", err)
+		h.redirect(w, r, "/admin/settings?err=bio")
+		return
+	}
+	h.log.Info("newsletter bio updated", "chars", len([]rune(bio)))
+	h.redirect(w, r, "/admin/settings?ok=bio")
 }
 
 // mediaConfigSave stores the media R2 target. Blank secret keeps the stored
