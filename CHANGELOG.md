@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Full-codebase review pass (architecture, quality, bugs). All changes test-first.
 
+### Changed (magazine layout & footer bio)
+
+- **杂志化排版（玄墨基因）**：邮件壳与正文样式对齐博客玄墨主题——纸底
+  `#F1F1EF`、玄黑正文、冷漆红 `#CE1432` 点睛（eyebrow 短线、链接红下划线、
+  blockquote 红左线）、宋体衬线 1.85 行高、发丝线分隔、首段首字下沉
+  （float，不支持客户端自动降级）、pre 玄黑反白、「阅读原文」玄黑按钮。
+- **页脚「我是谁 WHO AM I」个人介绍**：`settings` 表 `newsletter_bio`
+  多行文本，管理台「系统参数」页编辑（≤2000 字、空=隐藏区块、即时生效），
+  `CORE_NEWSLETTER_BIO` env 兜底；HTML 版转义+换行转 `<br>`，text 版保留原文。
+
 ### Added (newsletter full-article email & selective sending)
 
 - **全文邮件**：文章导入改为抓取主题正文容器（玄墨 `div.article__body`，兼容

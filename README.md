@@ -90,6 +90,7 @@ Everything is an environment variable ([.env.example](.env.example)):
 | `CORE_STATS_CRON` | `30 3 * * *` | Stats compaction cron: roll up into daily_stats, prune raw rows past retention, VACUUM. 03:30 — ahead of the 04:00 backup so snapshots are compacted |
 | `CORE_PAGEVIEW_RETENTION_DAYS` | `30` | Days of raw pageview detail to keep (2–3650). Daily PV/UV live forever in daily_stats; path/referrer/hourly detail is bounded by this window |
 | `CORE_MAILING_ADDRESS` | — | Physical address placeholder in the newsletter footer |
+| `CORE_NEWSLETTER_BIO` | — | Fallback for the newsletter footer bio block (the admin settings value wins) |
 
 ## Public API
 
