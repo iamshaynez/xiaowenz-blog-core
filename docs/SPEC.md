@@ -30,7 +30,7 @@
 
 - `subscribers`: id, email UNIQUE（小写归一化）, status(`pending|active|unsubscribed`), confirm_token, confirm_expires_at, unsub_token, created_at, confirmed_at, updated_at
 - `comments`: id, post_slug, author_name, author_email（不公开）, content, status(`pending|approved|rejected`), ip_hash, ua, created_at, moderated_at
-- `newsletters`: id, subject, markdown, html, status(`draft|sending|sent|failed`), sent_count, failed_count, created_at, sent_at
+- `newsletters`: id, subject, markdown, html, post_url(导入来源文章 URL，手动撰写为空；迁移 0004), status(`draft|sending|sent|failed`), sent_count, failed_count, created_at, sent_at
 - `downloads`: id, slug, ip_hash, ua, referer, created_at ；统计口径=按 (slug, ip_hash, 日) 去重
 - `pageviews`: id, path, referrer, ip_hash, ua, site, created_at —— **有界热层**：只保留 `CORE_PAGEVIEW_RETENTION_DAYS`（默认 30）天，行宽刻意瘦身（ip_hash 16 hex、ua 只存设备分类单字符）；site 维度为多站统计预留（当前恒空串）
 - `daily_stats`（迁移 0003）: site, day, pv, uv, PK(site, day) —— **永久日聚合层**：夜间压缩任务把完结日从 pageviews 精确重算（同日 ip_hash 去重）upsert 进来，随后清掉保留期外的明细。ip_hash 按日加盐意味着跨日访客本就不可链接：多日 UV=各日去重之和，清理明细对指标无损
@@ -68,31 +68,32 @@
 
 ## 4. 管理台
 
-管理台整体采用 editorial 设计语言（纸感底色/宋体标题/胶囊控件），页面骨架见 `internal/admin/templates/_layout.html`；仪表盘含下载量条形图与最近待审评论就地审核，评论/订阅页状态页签带实时计数，Newsletter 发送前展示收件人数并强制确认。（/admin，服务端渲染 html/template，无前端框架）
+管理台整体采用 editorial 设计语言（纸感底色/宋体标题/胶囊控件），页面骨架见 `internal/admin/templates/_layout.html`；仪表盘含下载量条形图与最近待审评论就地审核，评论/订阅页状态页签带实时计数，Newsletter 草稿页带收件人选择器（统计/搜索/已发送置灰）与 iframe 全邮件预览，发送强制确认。（/admin，服务端渲染 html/template，无前端框架）
 
 认证：`POST /admin/login`（口令常量时间比较）→ 签发 HMAC 签名会话 cookie（365 天，HttpOnly/Secure/SameSite=Lax；管理台为个人低频工具，长期免重登录）；`POST /admin/logout` 过期会话 cookie。中间件守卫所有 /admin/*（login 除外）。admin POST 校验 Origin 头同域。会话为无状态 HMAC 值：登出只清本浏览器 cookie，整体吊销需轮换 `CORE_ADMIN_TOKEN`。
 
 - `GET /admin` 仪表盘：active 订阅数、pending 评论数、近 30 天 PV/UV（按 ip_hash 去重）、各剧集近 30 天下载量（条形图）与最近待审评论就地审核。
 - `GET /admin/stats/html?days=1|7|30|90[&site=<host>]` 流量分析台：总量卡、**浏览时间线**（PV/UV 双柱、零流量桶补零、柱顶标 PV 数字；days=1 时切小时粒度，其余日粒度）、**热门路径 TOP 20**（PV/UV/占比）、**访问来源 TOP 20**（占比条；空 referrer 显示"直接访问"）、剧集下载量（本站专属，仅默认口径显示）、**多站总览**（各接入站今日/近 7 天/近 30 天 PV/UV，即 DAU 表；**站名为链接，点进该站过滤视图**）；四档时间窗同时作用于概要卡、时间线与路径/来源榜。`site` 缺省 = 本站博客口径（site=''）；传站点 host 时**整页**（总量/时间线/路径/来源）切到该站，窗口 chips 与返回链接保留口径。时间线与总量在 90 天窗下由 daily_stats 永久层支撑（明细清理后历史日照常出数）；路径/来源榜依赖 raw 明细，覆盖保留期（默认 30 天）。日界按进程本地时区（部署侧 `TZ` 对齐受众时区，容器镜像含 tzdata）。
 - Newsletter 删除：`POST /admin/newsletters/{id}/delete`（草稿/已发可删，**sending 在途拒删 409**；已发删除连带清理 send_log，事务内完成不留孤儿投递记录）。
-- Newsletter 从文章导入：`POST /admin/newsletters/import`（表单 `url`）→ 抓取已公网上线的博客文章，标题进主题、`og:description`/`meta description` 进导语、原文链接进正文，直接落 **draft**（绝不自动发送）。URL 的 host 必须落在 `CORE_SITE_URL` 派生的域名后缀内（如 `blog.xiaowenz.com` → 允许 `xiaowenz.com` 与 `*.xiaowenz.com`），站外一律 400（SSRF 防线）；抓取 10s 超时、正文上限 1 MiB、非 200 → 502。
+- Newsletter 从文章导入：`POST /admin/newsletters/import`（表单 `url`）→ 抓取已公网上线的博客文章，标题进主题；正文优先提取主题正文容器（玄墨 `div.article__body`，兼容 `e-content`/`itemprop=articleBody` microformats 锚点）整篇全文，经邮件化清洗（相对 URL 以文章地址绝对化、清 schema.org/script 噪音、注入邮件客户端安全的 inline style，Gmail 会 strip 外部 CSS）后落库，post_url 记录来源；容器缺失时回退摘要模式（`og:description` 导语 + 原文链接）。直接落 **draft**（绝不自动发送）。URL 的 host 必须落在 `CORE_SITE_URL` 派生的域名后缀内（如 `blog.xiaowenz.com` → 允许 `xiaowenz.com` 与 `*.xiaowenz.com`），站外一律 400（SSRF 防线）；抓取 10s 超时、正文上限 1 MiB、非 200 → 502。
 - 分发管理：`GET /admin/distribution`（媒体库入口）——feed 自检（enclosure 字节 ↔ 媒体库勾稽）、Apple 目录比对（iTunes 公开 lookup API：已收录最新一集、滞后天数、登记的 feed 域名哨兵）、小宇宙节目页配置与机制说明；平台配置（`apple_show_id`/`apple_country`/`xiaoyuzhou_url`）经 `POST /admin/distribution/settings` 存 settings 表。Apple 无可用 ping 端点，官方刷新路径是 Podcasts Connect 手动刷新；收录节奏 ≤24h。
 - 播客对账：`GET /admin/media` 拉取 `{CORE_SITE_URL}/feed/audio.xml` 与媒体库 `audio/*` 互相勾稽，逐集回答：**已上线**（音频已传且 feed 有对应剧集）/ **未上线**（音频已传、剧集 md 未发——附可复制的剧集 frontmatter 片段，`audio_slug`/`audio_bytes` 与媒体库真实值对齐）/ **缺音频**（feed 剧集指向未上传的音频，enclosure 会 404，红牌警示）。feed 拉不到时对账区标注不可用，页面不 500；缓存口径同博客文章源（10 分钟）。
 - 博客文章源联动：`GET /admin/newsletters/new` 顺带拉取 `{CORE_SITE_URL}/feed.xml`（派生自既有配置，不新增 env），最近文章（≤30 条，含博客与播客条目）渲染成下拉列表，选中提交即走上述 import——全程零手动输入。feed 文章链接的主机统一改写为 feed 实际来源源（Hugo feed 内是 baseURL 绝对地址，apex 切换前点 canonical 会 404）。feed 内存缓存 10 分钟；拉取失败页面照常渲染，手动粘 URL 永远是兜底。
 - 订阅名单：`GET /admin/subscribers?status=&q=`（分页 50）；`POST /admin/subscribers/import`（CSV 上传，列=email[,confirmed]，重复跳过，导入即 active 并记 confirmed_at；**导入不进验证流程**——名单来自旧平台已验证用户）；`GET /admin/subscribers/export`（CSV；公式注入中和：以 `=`/`+`/`-`/`@`/tab/CR 开头的单元格前缀单引号）；`POST /admin/subscribers/{id}/delete`。
 - 评论审核：`GET /admin/comments?status=pending`；`POST /admin/comments/{id}/approve|reject`。
-- Newsletter：`GET /admin/newsletters`（历史列表）；`GET /admin/newsletters/new`；`POST /admin/newsletters`（subject+markdown → goldmark 渲染 html，存 draft）；`GET /admin/newsletters/{id}`（预览 HTML）；`POST /admin/newsletters/{id}/send` → 后台 goroutine 逐人发送：
-  - 每人独立渲染：正文 + 页脚（含 `unsub?token=` 个人链接）；`List-Unsubscribe` + `List-Unsubscribe-Post`（RFC 8058）头；
-  - 限速 1 封/秒（可配置 `CORE_SEND_INTERVAL_MS`）；写 send_log；全部完成后置 sent + sent_count/failed_count；
-  - 发信中服务重启：启动时将 `sending` 状态回退为 `draft` 并日志告警（幂等优先，宁重发不丢）。
+- Newsletter：`GET /admin/newsletters`（历史列表）；`GET /admin/newsletters/new`；`POST /admin/newsletters`（subject+markdown → goldmark 渲染 html 后同样邮件化，存 draft）；`GET /admin/newsletters/{id}`（草稿页：收件人选择器 + iframe 预览）；`GET /admin/newsletters/{id}/preview`（订阅者视角完整邮件，与发送同一壳模板，退订链接 `#` 占位）；`POST /admin/newsletters/{id}/send`（表单 `ids[]` 勾选收件人，空选择 400）→ 后台 goroutine 逐人发送：
+  - 收件人 = 勾选 ids ∩ active ∩ 本期尚未成功送达（send_log `status='sent'` 判重，**同一邮箱地址绝不发第二次**；failed 可重试）；支持先勾少数邮箱测试发送、再批量补发未发送的；
+  - 每人独立渲染：全文正文 + 文章标题 + 「阅读原文」（post_url 非空时）+ 页脚（含 `unsub?token=` 个人链接）；`List-Unsubscribe` + `List-Unsubscribe-Post`（RFC 8058）头；
+  - 限速 1 封/秒（可配置 `CORE_SEND_INTERVAL_MS`）；写 send_log；一轮结束仍有 active 未送达 → 回 **draft** 等待补发（计数累加），全部送达才置 sent + sent_count/failed_count；
+  - 发信中服务重启：启动时将 `sending` 状态回退为 `draft` 并日志告警（幂等优先，宁重发不丢；判重兜底由 send_log 承担）。
 - 媒体：`POST /admin/media`（multipart，≤100MB，白名单 mime：image/*（**不含 svg/svg+xml**，存储型 XSS 载体）、audio/mpeg、audio/mp4）→ PutObject 到 R2 `images/` 或 `audio/` 前缀（文件名冲突加短随机后缀）→ 写 media 表 → 返回 `{url, bytes, key}`；`GET /admin/media` 列表。
 - 统计：`GET /admin/stats` JSON + `GET /admin/stats/html` 简单图表页（表格即可）。
 
 ## 5. 邮件
 
 - Mailer 接口：`Send(to, subject, html, text string, headers map[string]string) error`；SMTP 实现（465 直连 TLS / 587 STARTTLS）；测试用 Fake。
-- 模板（html/template 内嵌）：验证邮件、欢迎邮件、评论通知（含一键链接）、newsletter 外壳（品牌名「三杯过后」，页脚退订链接 + 物理邮寄地址占位配置 `CORE_MAILING_ADDRESS`）。
-- 所有邮件同时给 text 纯文本备选；header 值过滤 CRLF。
+- 模板（html/template 内嵌）：验证邮件、欢迎邮件、评论通知（含一键链接）、newsletter 外壳（页眉品牌行「三杯过后 · 专栏博客文章订阅」、文章大标题、全文正文、「阅读原文」按钮、页脚退订链接 + 物理邮寄地址占位配置 `CORE_MAILING_ADDRESS`）。
+- 所有邮件同时给 text 纯文本备选（newsletter 的 text 版为正文真实纯文本，非占位文案）；header 值过滤 CRLF。
 
 ## 6. 备份
 

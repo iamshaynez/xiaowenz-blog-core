@@ -93,7 +93,7 @@ curl -i localhost:8080/a/ep01.mp3
 #    管理台上传（无 R2 时优雅 503）：浏览器开 http://localhost:8080/admin
 #    （口令 dev-token）→ 媒体 → 上传 ep01.mp3。配置 R2 后再访问 → 302 到 R2 URL。
 
-# 6. Newsletter：管理台 → Newsletter → 新建（Markdown）→ 预览 → 开始群发
+# 6. Newsletter：管理台 → Newsletter → 新建（文章 URL 导入全文 / Markdown）→ 预览 → 勾选收件人发送（可先测试再补发，同址不重发）
 #    （dev 模式群发内容进日志；每人带个人退订链接 + List-Unsubscribe 头）
 
 # 7. 退订：从群发日志拿 /api/unsub?token=... → GET 出确认页 → POST 执行退订
