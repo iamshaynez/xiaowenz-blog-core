@@ -19,6 +19,7 @@ type senderFixture struct {
 	sender *Sender
 	store  *store.Store
 	fake   *mailer.Fake
+	cfg    *config.Config
 }
 
 func newSenderFixture(t *testing.T, m mailer.Mailer) *senderFixture {
@@ -37,7 +38,7 @@ func newSenderFixture(t *testing.T, m mailer.Mailer) *senderFixture {
 	}
 	fm, _ := m.(*mailer.Fake)
 	s := NewSender(st, m, cfg, slog.New(slog.DiscardHandler))
-	return &senderFixture{sender: s, store: st, fake: fm}
+	return &senderFixture{sender: s, store: st, fake: fm, cfg: cfg}
 }
 
 func seedActive(t *testing.T, st *store.Store, emails ...string) []store.Subscriber {
@@ -384,5 +385,28 @@ func TestWaitBlocksUntilDone(t *testing.T) {
 	n, _ := fx.store.GetNewsletter(id)
 	if n.Status != "sent" {
 		t.Errorf("Wait returned before completion: %+v", n)
+	}
+}
+
+// 发送的邮件带页脚 bio（数据库优先，env 兜底——fixture 走 env 路径）。
+func TestSendCarriesFooterBio(t *testing.T) {
+	fx := newSenderFixture(t, &mailer.Fake{})
+	fx.cfg.NewsletterBio = "发件人的介绍。\n第二行。"
+	seedActive(t, fx.store, "a@x.com")
+	id, _ := fx.store.CreateNewsletter("t", "m", "<p>x</p>", "")
+
+	if err := fx.sender.Start(id, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	fx.sender.Wait()
+	if len(fx.fake.Sent) != 1 {
+		t.Fatalf("emails = %d", len(fx.fake.Sent))
+	}
+	m := fx.fake.Sent[0]
+	if !strings.Contains(m.HTML, "我是谁 WHO AM I") || !strings.Contains(m.HTML, "发件人的介绍。<br>第二行。") {
+		t.Error("HTML 版缺 bio 区块")
+	}
+	if !strings.Contains(m.Text, "发件人的介绍。\n第二行。") {
+		t.Error("text 版缺 bio 原文")
 	}
 }

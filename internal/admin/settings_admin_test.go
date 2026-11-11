@@ -245,3 +245,93 @@ func TestSettingsStatsSitesRejectsBadValues(t *testing.T) {
 		t.Errorf("invalid domains persisted: %v", got)
 	}
 }
+
+// 个人介绍：设置页分区展示 textarea + 保存多行文本 + 回显。
+func TestSettingsNewsletterBioSavedAndShown(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+
+	body := getSettingsPage(t, fx.handler, session)
+	if !strings.Contains(body, "个人介绍") || !strings.Contains(body, `name="bio"`) {
+		t.Fatal("settings page missing 个人介绍 section/textarea")
+	}
+
+	bio := "我是晓文，写代码也写字。\n博客「三杯过后」的作者。\n住在成都。"
+	rec := postBackupForm(t, fx.handler, session, "/admin/settings/newsletter-bio", url.Values{
+		"bio": {bio},
+	})
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "ok=bio") {
+		t.Fatalf("status=%d loc=%q, want 303 ok=bio", rec.Code, rec.Header().Get("Location"))
+	}
+
+	got, err := sysconfig.LoadNewsletterBio(fx.store)
+	if err != nil {
+		t.Fatalf("LoadNewsletterBio: %v", err)
+	}
+	if got != bio {
+		t.Errorf("saved = %q, want %q（多行保留）", got, bio)
+	}
+
+	// 页面回显已保存内容。
+	body = getSettingsPage(t, fx.handler, session)
+	if !strings.Contains(body, "写代码也写字") {
+		t.Error("page missing saved bio")
+	}
+}
+
+// 超长个人介绍整单拒绝，不落库。
+func TestSettingsNewsletterBioTooLongRejected(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+
+	rec := postBackupForm(t, fx.handler, session, "/admin/settings/newsletter-bio", url.Values{
+		"bio": {strings.Repeat("字", 2001)},
+	})
+	if !strings.Contains(rec.Header().Get("Location"), "err=bio") {
+		t.Fatalf("loc = %q, want err=bio", rec.Header().Get("Location"))
+	}
+	got, _ := sysconfig.LoadNewsletterBio(fx.store)
+	if got != "" {
+		t.Errorf("被拒绝的 bio 不应落库: %q", got)
+	}
+}
+
+// 清空保存 = 邮件页脚隐藏「我是谁」区块。
+func TestSettingsNewsletterBioCanBeCleared(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	_ = sysconfig.SaveNewsletterBio(fx.store, "旧介绍")
+
+	rec := postBackupForm(t, fx.handler, session, "/admin/settings/newsletter-bio", url.Values{
+		"bio": {" "},
+	})
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "ok=bio") {
+		t.Fatalf("清空保存失败: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	got, _ := sysconfig.LoadNewsletterBio(fx.store)
+	if got != "" {
+		t.Errorf("清空后 = %q, want 空串", got)
+	}
+}
+
+// 预览路由渲染「我是谁」区块（数据库配置的 bio 即时生效）。
+func TestNewsletterPreviewShowsBio(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	id, _ := fx.store.CreateNewsletter("t", "m", "<p>x</p>", "")
+	if err := sysconfig.SaveNewsletterBio(fx.store, "预览里的介绍。\n第二行。"); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, authed(http.MethodGet, "/admin/newsletters/"+itoa(id)+"/preview", nil, session))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preview: %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"我是谁 WHO AM I", "预览里的介绍。<br>第二行。"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("预览缺 %q", want)
+		}
+	}
+}

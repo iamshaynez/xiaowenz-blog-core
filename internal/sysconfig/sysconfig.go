@@ -186,6 +186,40 @@ func SaveStatsSites(src SettingSource, domains []string) error {
 	return src.SetSetting(SettingKeyStatsSites, strings.Join(domains, "\n"))
 }
 
+// SettingKeyNewsletterBio holds the multi-line personal bio rendered in the
+// newsletter footer「我是谁 WHO AM I」block. Falls back to CORE_NEWSLETTER_BIO.
+const SettingKeyNewsletterBio = "newsletter_bio"
+
+// MaxNewsletterBio caps the stored bio (email-size safety).
+const MaxNewsletterBio = 2000
+
+// LoadNewsletterBio reads the console-configured bio (” when unset).
+func LoadNewsletterBio(src SettingSource) (string, error) {
+	raw, err := src.GetSetting(SettingKeyNewsletterBio)
+	if err != nil {
+		return "", fmt.Errorf("load %s: %w", SettingKeyNewsletterBio, err)
+	}
+	return raw, nil
+}
+
+// SaveNewsletterBio trims and persists the bio, rejecting overly long text.
+func SaveNewsletterBio(src SettingSource, text string) error {
+	text = strings.TrimSpace(text)
+	if len([]rune(text)) > MaxNewsletterBio {
+		return fmt.Errorf("newsletter bio exceeds %d characters", MaxNewsletterBio)
+	}
+	return src.SetSetting(SettingKeyNewsletterBio, text)
+}
+
+// EffectiveNewsletterBio resolves the effective bio: the database value wins
+// when set, the environment (CORE_NEWSLETTER_BIO) fills the gap.
+func EffectiveNewsletterBio(db, env string) string {
+	if db != "" {
+		return db
+	}
+	return env
+}
+
 // EffectiveMediaR2 resolves the effective media config field by field: a
 // database value wins when set, the environment fills the gaps. Pure so the
 // settings page can render sources and the client factory can share it.

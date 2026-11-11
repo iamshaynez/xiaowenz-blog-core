@@ -36,6 +36,7 @@
 - `daily_stats`（迁移 0003）: site, day, pv, uv, PK(site, day) —— **永久日聚合层**：夜间压缩任务把完结日从 pageviews 精确重算（同日 ip_hash 去重）upsert 进来，随后清掉保留期外的明细。ip_hash 按日加盐意味着跨日访客本就不可链接：多日 UV=各日去重之和，清理明细对指标无损
 - `media`: id, key UNIQUE, url, bytes, content_type, created_at
 - `send_log`: id, newsletter_id, subscriber_id, status, error, created_at
+- `settings`（KV）：`newsletter_bio` = Newsletter 页脚「我是谁 WHO AM I」多行个人介绍（空=隐藏区块；管理台「系统参数」页编辑，`CORE_NEWSLETTER_BIO` 环境变量兜底，上限 2000 字）
 
 所有 token：`crypto/rand` 32 字节 hex。索引：email、post_slug+status、slug+created_at、created_at。
 
@@ -83,7 +84,7 @@
 - 评论审核：`GET /admin/comments?status=pending`；`POST /admin/comments/{id}/approve|reject`。
 - Newsletter：`GET /admin/newsletters`（历史列表）；`GET /admin/newsletters/new`；`POST /admin/newsletters`（subject+markdown → goldmark 渲染 html 后同样邮件化，存 draft）；`GET /admin/newsletters/{id}`（草稿页：收件人选择器 + iframe 预览）；`GET /admin/newsletters/{id}/preview`（订阅者视角完整邮件，与发送同一壳模板，退订链接 `#` 占位）；`POST /admin/newsletters/{id}/send`（表单 `ids[]` 勾选收件人，空选择 400）→ 后台 goroutine 逐人发送：
   - 收件人 = 勾选 ids ∩ active ∩ 本期尚未成功送达（send_log `status='sent'` 判重，**同一邮箱地址绝不发第二次**；failed 可重试）；支持先勾少数邮箱测试发送、再批量补发未发送的；
-  - 每人独立渲染：全文正文 + 文章标题 + 「阅读原文」（post_url 非空时）+ 页脚（含 `unsub?token=` 个人链接）；`List-Unsubscribe` + `List-Unsubscribe-Post`（RFC 8058）头；
+  - 每人独立渲染：全文正文 + 文章标题 + 「阅读原文」（post_url 非空时）+ 页脚（bio 区块 + `unsub?token=` 个人链接；bio 每轮 run 读一次）；`List-Unsubscribe` + `List-Unsubscribe-Post`（RFC 8058）头；
   - 限速 1 封/秒（可配置 `CORE_SEND_INTERVAL_MS`）；写 send_log；一轮结束仍有 active 未送达 → 回 **draft** 等待补发（计数累加），全部送达才置 sent + sent_count/failed_count；
   - 发信中服务重启：启动时将 `sending` 状态回退为 `draft` 并日志告警（幂等优先，宁重发不丢；判重兜底由 send_log 承担）。
 - 媒体：`POST /admin/media`（multipart，≤100MB，白名单 mime：image/*（**不含 svg/svg+xml**，存储型 XSS 载体）、audio/mpeg、audio/mp4）→ PutObject 到 R2 `images/` 或 `audio/` 前缀（文件名冲突加短随机后缀）→ 写 media 表 → 返回 `{url, bytes, key}`；`GET /admin/media` 列表。
@@ -92,7 +93,7 @@
 ## 5. 邮件
 
 - Mailer 接口：`Send(to, subject, html, text string, headers map[string]string) error`；SMTP 实现（465 直连 TLS / 587 STARTTLS）；测试用 Fake。
-- 模板（html/template 内嵌）：验证邮件、欢迎邮件、评论通知（含一键链接）、newsletter 外壳（页眉品牌行「三杯过后 · 专栏博客文章订阅」、文章大标题、全文正文、「阅读原文」按钮、页脚退订链接 + 物理邮寄地址占位配置 `CORE_MAILING_ADDRESS`）。
+- 模板（html/template 内嵌）：验证邮件、欢迎邮件、评论通知（含一键链接）、newsletter 外壳——玄墨杂志风格（纸底 #F1F1EF / 玄黑 #141210 / 冷漆红 #CE1432 点睛、宋体衬线正文 1.85 行高、红短线 eyebrow「三杯过后 · 专栏博客文章订阅」、首段首字下沉、链接红下划线、blockquote 红左线、pre 玄黑反白、「阅读原文」玄黑按钮、页脚「我是谁 WHO AM I」区块 + 退订链接 + 物理邮寄地址占位配置 `CORE_MAILING_ADDRESS`）。
 - 所有邮件同时给 text 纯文本备选（newsletter 的 text 版为正文真实纯文本，非占位文案）；header 值过滤 CRLF。
 
 ## 6. 备份

@@ -48,6 +48,7 @@ internal/
 | `CORE_STATS_CRON` | `30 3 * * *` | 统计压缩 cron（rollup 进 daily_stats → 清保留期外明细 → VACUUM）；默认 03:30，先于 04:00 备份让快照已是压缩后的小库 |
 | `CORE_PAGEVIEW_RETENTION_DAYS` | `30` | raw pageviews 明细保留天数（2–3650）；逐日 PV/UV 指标在 daily_stats 永久保留，路径/来源/小时明细只覆盖本窗口 |
 | `CORE_MAILING_ADDRESS` | 空 | Newsletter 页脚物理邮寄地址占位 |
+| `CORE_NEWSLETTER_BIO` | 空 | 页脚「我是谁 WHO AM I」个人介绍兜底（管理台配置优先） |
 
 **prod 启动校验**（`CORE_ENV=prod`）：`CORE_ADMIN_TOKEN`、`CORE_SMTP_HOST`+`CORE_SMTP_FROM`、`CORE_BASE_URL`、`CORE_SITE_URL` 缺失即退出非零。
 

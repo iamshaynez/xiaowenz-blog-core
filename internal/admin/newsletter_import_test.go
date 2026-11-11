@@ -124,8 +124,8 @@ func TestNewsletterImportFullArticle(t *testing.T) {
 	if n.PostURL != postURL {
 		t.Errorf("post_url = %q, want %q", n.PostURL, postURL)
 	}
-	// 全文进正文（h2 已注入 inline style，按文本+闭合标签断言）。
-	if !strings.Contains(n.HTML, ">组织效率</h2>") || !strings.Contains(n.HTML, "正文第一段") {
+	// 全文进正文（h2 已注入 inline style；首段被首字下沉 span 拆开，分段断言）。
+	if !strings.Contains(n.HTML, ">组织效率</h2>") || !strings.Contains(n.HTML, "文第一段") {
 		t.Errorf("全文未进正文: %q", n.HTML)
 	}
 	// 相对 URL 绝对化（链接按站点根、图片按文章目录）。

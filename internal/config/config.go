@@ -44,6 +44,9 @@ type Config struct {
 	SendInterval time.Duration
 	// MailingAddress is the physical-address placeholder in newsletter footers.
 	MailingAddress string
+	// NewsletterBio is the env fallback (CORE_NEWSLETTER_BIO) for the
+	// footer「我是谁 WHO AM I」block; the admin settings value wins.
+	NewsletterBio string
 
 	// StatsCron schedules pageview compaction (rollup + prune + VACUUM).
 	// Default 03:30 — before the 04:00 backup, so snapshots are compacted.
@@ -94,6 +97,7 @@ func Load() (*Config, error) {
 		R2PublicBase:    os.Getenv("CORE_R2_PUBLIC_BASE"),
 		TurnstileSecret: os.Getenv("CORE_TURNSTILE_SECRET"),
 		MailingAddress:  os.Getenv("CORE_MAILING_ADDRESS"),
+		NewsletterBio:   os.Getenv("CORE_NEWSLETTER_BIO"),
 		SendInterval:    time.Second,
 		SMTPPort:        587,
 		StatsCron:       envOr("CORE_STATS_CRON", "30 3 * * *"),
