@@ -9,7 +9,7 @@
 
 A self-hosted companion service that gives a static site (Hugo, Astro, Jekyll — anything) the dynamic features of a hosted platform like Typlog/Substack:
 
-- 📮 **Newsletter** — double opt-in subscriptions, list management, Markdown-to-email campaigns with per-recipient unsubscribe links
+- 📮 **Newsletter** — double opt-in subscriptions, list management, full-article email campaigns (one-click post import, brand shell, HTML preview) with per-recipient unsubscribe links and selected-recipient test/partial sending
 - 💬 **Comments** — moderated by default, one-click approve/reject links in the notification email, no third-party comment SaaS
 - 🎙️ **Podcast analytics** — download counting via a Podtrac-style 302 redirect endpoint, same-day dedupe per listener
 - 🖼️ **Media hosting** — admin uploads straight to Cloudflare R2 (zero egress fees)
@@ -104,7 +104,7 @@ Everything is an environment variable ([.env.example](.env.example)):
 | `GET /a/{slug}.mp3` | Counts a podcast download (same-day per-IP dedupe), 302 → R2 |
 | `GET /healthz` | Liveness/readiness probe |
 
-The admin console at `/admin` (server-rendered, no JS framework) covers: dashboard, subscriber list/import/export, comment moderation, Markdown newsletter composer with preview & background sending, media uploads, and stats.
+The admin console at `/admin` (server-rendered, no JS framework) covers: dashboard, subscriber list/import/export, comment moderation, newsletter composer (full-article import + WYSIWYG email preview + recipient-picker sending), media uploads, and stats.
 
 ## Deployment
 

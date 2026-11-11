@@ -79,6 +79,106 @@ func TestNewsletterImportFromPost(t *testing.T) {
 	}
 }
 
+// 全文导入：页面带玄墨主题正文容器（div.article__body …）时，草稿正文
+// = 清洗后的全文 HTML（URL 绝对化、去 schema 噪音、注入 inline style），
+// post_url 记录来源；页眉页脚/目录不进正文。
+func TestNewsletterImportFullArticle(t *testing.T) {
+	fx := newAdminFixture(t)
+	page := startPostPage(t, 200, `<!doctype html><html><head>
+<title>每个人都快起来了 - 三杯过后</title>
+<meta property="og:title" content="每个人都快起来了">
+<meta property="og:description" content="AI 提效从来就不是一个个人效率问题">
+</head><body>
+<article class="container article h-entry" itemscope itemtype="http://schema.org/Article">
+  <header class="article__header"><h1 class="article__title">每个人都快起来了</h1></header>
+  <aside class="toc"><div class="toc__title">目录</div><ul><li><a href="#a">一</a></li></ul></aside>
+  <div class="article__body prose e-content js-content" itemprop="articleBody">
+    <h2>组织效率</h2>
+    <p>正文第一段，见 <a href="/about/">关于我</a>。</p>
+    <p><img src="img/pic.png" alt="配图"></p>
+    <div itemprop="image" itemscope itemtype="https://schema.org/ImageObject">
+      <meta itemprop="url" content="https://x/icon.jpg">
+    </div>
+    <meta itemprop="dateModified" content="2026-11-11T00:00:00Z"/>
+  </div>
+  <footer class="article__footer"><a href="/blog/">← 全部文章</a></footer>
+</article>
+</body></html>`)
+	allowImportsForTest(t, fx.raw, page.URL)
+	postURL := page.URL + "/blog/ai-performance.html"
+
+	rec := postForm(fx.handler, login(t, fx.handler), "/admin/newsletters/import",
+		"url="+url.QueryEscape(postURL))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303; body=%s", rec.Code, rec.Body)
+	}
+
+	list, _ := fx.store.ListNewsletters()
+	if len(list) != 1 {
+		t.Fatalf("newsletters = %d, want 1", len(list))
+	}
+	n := list[0]
+	if n.Subject != "每个人都快起来了" {
+		t.Errorf("subject = %q", n.Subject)
+	}
+	if n.PostURL != postURL {
+		t.Errorf("post_url = %q, want %q", n.PostURL, postURL)
+	}
+	// 全文进正文（h2 已注入 inline style，按文本+闭合标签断言）。
+	if !strings.Contains(n.HTML, ">组织效率</h2>") || !strings.Contains(n.HTML, "正文第一段") {
+		t.Errorf("全文未进正文: %q", n.HTML)
+	}
+	// 相对 URL 绝对化（链接按站点根、图片按文章目录）。
+	if !strings.Contains(n.HTML, `href="`+page.URL+`/about/"`) {
+		t.Errorf("链接未绝对化: %q", n.HTML)
+	}
+	if !strings.Contains(n.HTML, `src="`+page.URL+`/blog/img/pic.png"`) {
+		t.Errorf("图片未按文章目录绝对化: %q", n.HTML)
+	}
+	// schema 噪音与主题页脚/目录不进正文。
+	for _, noise := range []string{"itemprop", "dateModified", "全部文章", "toc__title"} {
+		if strings.Contains(n.HTML, noise) {
+			t.Errorf("正文混入 %q: %q", noise, n.HTML)
+		}
+	}
+	// 邮件化 inline style 已注入。
+	if !strings.Contains(n.HTML, "<p style=") {
+		t.Errorf("inline style 未注入: %q", n.HTML)
+	}
+	// markdown 列存来源占位（编辑视角可见导入地址）。
+	if !strings.Contains(n.Markdown, postURL) {
+		t.Errorf("markdown 缺来源地址: %q", n.Markdown)
+	}
+}
+
+// 页面没有正文容器时回退摘要模式（og:description + 阅读全文链接），
+// post_url 仍记录来源。
+func TestNewsletterImportFallsBackToSummary(t *testing.T) {
+	fx := newAdminFixture(t)
+	page := startPostPage(t, 200, `<!doctype html><html><head>
+<title>旧版文章</title>
+</head><body><article>纯正文，无主题容器</article></body></html>`)
+	allowImportsForTest(t, fx.raw, page.URL)
+	postURL := page.URL + "/blog/legacy.html"
+
+	rec := postForm(fx.handler, login(t, fx.handler), "/admin/newsletters/import",
+		"url="+url.QueryEscape(postURL))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body)
+	}
+	list, _ := fx.store.ListNewsletters()
+	if len(list) != 1 {
+		t.Fatalf("newsletters = %d", len(list))
+	}
+	n := list[0]
+	if n.PostURL != postURL {
+		t.Errorf("post_url = %q, want %q", n.PostURL, postURL)
+	}
+	if !strings.Contains(n.Markdown, "阅读全文") || !strings.Contains(n.Markdown, postURL) {
+		t.Errorf("摘要模式回退失败: %q", n.Markdown)
+	}
+}
+
 // 站外 URL 一律拒绝（SSRF 防线），且不落任何草稿。
 func TestNewsletterImportRejectsForeignHost(t *testing.T) {
 	fx := newAdminFixture(t)

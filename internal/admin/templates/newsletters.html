@@ -12,8 +12,11 @@
     {{range .List}}
     <tr>
       <td><a class="link" href="/admin/newsletters/{{.ID}}">{{.Subject}}</a></td>
-      <td><span class="badge {{.Status}}">{{.Status}}</span></td>
-      <td class="num">{{if or (eq .Status "sent") (eq .Status "sending")}}{{.SentCount}} / {{.FailedCount}}{{else}}—{{end}}</td>
+      <td>
+        <span class="badge {{.Status}}">{{.Status}}</span>
+        {{if and (eq .Status "draft") (gt .SentCount 0)}}<span class="dim num" style="font-size:12px;">已发 {{.SentCount}}</span>{{end}}
+      </td>
+      <td class="num">{{if or (eq .Status "sent") (eq .Status "sending") (gt .SentCount 0)}}{{.SentCount}} / {{.FailedCount}}{{else}}—{{end}}</td>
       <td class="dim num">{{rfc3339 .CreatedAt}}</td>
       <td class="dim num">{{rfc3339 .SentAt}}</td>
       <td style="white-space:nowrap;">

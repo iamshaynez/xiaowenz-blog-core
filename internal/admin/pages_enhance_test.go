@@ -93,7 +93,7 @@ func TestNewsletterViewShowsRecipientCount(t *testing.T) {
 	insertSubscriber(t, fx, "a@x.com", "active")
 	insertSubscriber(t, fx, "b@x.com", "active")
 	insertSubscriber(t, fx, "c@x.com", "unsubscribed")
-	id, err := fx.store.CreateNewsletter("测试刊", "**hi**", "<p>hi</p>")
+	id, err := fx.store.CreateNewsletter("测试刊", "**hi**", "<p>hi</p>", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,11 +106,19 @@ func TestNewsletterViewShowsRecipientCount(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "2 位订阅者") {
-		t.Errorf("发送确认应显示 active 订阅者数（2 位），页面未见。含 325？%v", strings.Contains(body, "325"))
+	// 新契约：收件人选择器列出全部 active（含未验证退订者排除），
+	// 统计行展示待发送数；发送确认改为 send-form 的 submit 拦截。
+	if !strings.Contains(body, `待发送 <b class="num">2</b>`) {
+		t.Errorf("发送区应显示待发送订阅者数（2），页面未见。含 325？%v", strings.Contains(body, "325"))
 	}
-	if !strings.Contains(body, "confirm-send") {
-		t.Error("发送按钮应带 confirm-send 确认交互")
+	if !strings.Contains(body, "a@x.com") || !strings.Contains(body, "b@x.com") {
+		t.Error("收件人选择器应列出 active 订阅者邮箱")
+	}
+	if strings.Contains(body, "c@x.com") {
+		t.Error("已退订订阅者不应出现在收件人列表")
+	}
+	if !strings.Contains(body, "send-form") {
+		t.Error("发送按钮应带 send-form 确认交互")
 	}
 }
 
@@ -145,7 +153,7 @@ func insertSubscriber(t *testing.T, fx *adminFixture, email, status string) {
 // ── Newsletter 删除：草稿/已发可删，在途拒删 ─────────────────────────
 func TestNewsletterDelete(t *testing.T) {
 	fx := newAdminFixture(t)
-	if _, err := fx.store.CreateNewsletter("测试刊", "md", "<p>md</p>"); err != nil {
+	if _, err := fx.store.CreateNewsletter("测试刊", "md", "<p>md</p>", ""); err != nil {
 		t.Fatal(err)
 	}
 	s := login(t, fx.handler)
@@ -159,7 +167,7 @@ func TestNewsletterDelete(t *testing.T) {
 	}
 
 	// sending 在途拒删 → 409
-	id2, err := fx.store.CreateNewsletter("发送中", "md", "<p>x</p>")
+	id2, err := fx.store.CreateNewsletter("发送中", "md", "<p>x</p>", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +180,7 @@ func TestNewsletterDelete(t *testing.T) {
 	}
 
 	// 列表页有删除按钮（带确认），sending 状态不出
-	_, _ = fx.store.CreateNewsletter("带按钮的草稿", "md", "<p>x</p>")
+	_, _ = fx.store.CreateNewsletter("带按钮的草稿", "md", "<p>x</p>", "")
 	page := httptest.NewRecorder()
 	req := authed(http.MethodGet, "/admin/newsletters", nil, s)
 	fx.handler.ServeHTTP(page, req)
