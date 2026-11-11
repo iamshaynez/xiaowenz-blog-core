@@ -93,7 +93,7 @@ func (h *Handler) newsletterImport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "markdown render failed")
 		return
 	}
-	id, err := h.store.CreateNewsletter(title, md, buf.String())
+	id, err := h.store.CreateNewsletter(title, md, buf.String(), "")
 	if err != nil {
 		h.log.Error("create newsletter", "err", err)
 		writeErr(w, http.StatusInternalServerError, "create failed")

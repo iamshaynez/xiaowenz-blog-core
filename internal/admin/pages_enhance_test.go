@@ -93,7 +93,7 @@ func TestNewsletterViewShowsRecipientCount(t *testing.T) {
 	insertSubscriber(t, fx, "a@x.com", "active")
 	insertSubscriber(t, fx, "b@x.com", "active")
 	insertSubscriber(t, fx, "c@x.com", "unsubscribed")
-	id, err := fx.store.CreateNewsletter("测试刊", "**hi**", "<p>hi</p>")
+	id, err := fx.store.CreateNewsletter("测试刊", "**hi**", "<p>hi</p>", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func insertSubscriber(t *testing.T, fx *adminFixture, email, status string) {
 // ── Newsletter 删除：草稿/已发可删，在途拒删 ─────────────────────────
 func TestNewsletterDelete(t *testing.T) {
 	fx := newAdminFixture(t)
-	if _, err := fx.store.CreateNewsletter("测试刊", "md", "<p>md</p>"); err != nil {
+	if _, err := fx.store.CreateNewsletter("测试刊", "md", "<p>md</p>", ""); err != nil {
 		t.Fatal(err)
 	}
 	s := login(t, fx.handler)
@@ -159,7 +159,7 @@ func TestNewsletterDelete(t *testing.T) {
 	}
 
 	// sending 在途拒删 → 409
-	id2, err := fx.store.CreateNewsletter("发送中", "md", "<p>x</p>")
+	id2, err := fx.store.CreateNewsletter("发送中", "md", "<p>x</p>", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestNewsletterDelete(t *testing.T) {
 	}
 
 	// 列表页有删除按钮（带确认），sending 状态不出
-	_, _ = fx.store.CreateNewsletter("带按钮的草稿", "md", "<p>x</p>")
+	_, _ = fx.store.CreateNewsletter("带按钮的草稿", "md", "<p>x</p>", "")
 	page := httptest.NewRecorder()
 	req := authed(http.MethodGet, "/admin/newsletters", nil, s)
 	fx.handler.ServeHTTP(page, req)

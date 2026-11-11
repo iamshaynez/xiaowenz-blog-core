@@ -443,6 +443,7 @@ type Newsletter struct {
 	Subject     string
 	Markdown    string
 	HTML        string
+	PostURL     string
 	Status      string
 	SentCount   int
 	FailedCount int
@@ -450,11 +451,12 @@ type Newsletter struct {
 	SentAt      int64
 }
 
-// CreateNewsletter stores a rendered draft.
-func (s *Store) CreateNewsletter(subject, markdown, html string) (int64, error) {
+// CreateNewsletter stores a rendered draft. postURL is the source article
+// URL for imported drafts ('' for hand-written ones).
+func (s *Store) CreateNewsletter(subject, markdown, html, postURL string) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO newsletters (subject, markdown, html, status, created_at)
-		 VALUES (?, ?, ?, 'draft', ?)`, subject, markdown, html, s.now().Unix())
+		`INSERT INTO newsletters (subject, markdown, html, post_url, status, created_at)
+		 VALUES (?, ?, ?, ?, 'draft', ?)`, subject, markdown, html, postURL, s.now().Unix())
 	if err != nil {
 		return 0, fmt.Errorf("create newsletter: %w", err)
 	}
@@ -505,16 +507,37 @@ func (s *Store) MarkNewsletterSending(id int64) error {
 	return nil
 }
 
-// MarkNewsletterSent records final counts and sent_at.
+// MarkNewsletterSent records final counts (accumulated across partial runs)
+// and sent_at, closing the newsletter as fully delivered.
 func (s *Store) MarkNewsletterSent(id int64, sent, failed int) error {
 	res, err := s.db.Exec(
-		`UPDATE newsletters SET status='sent', sent_count=?, failed_count=?, sent_at=? WHERE id=?`,
+		`UPDATE newsletters SET status='sent',
+		        sent_count=sent_count+?, failed_count=failed_count+?, sent_at=?
+		 WHERE id=?`,
 		sent, failed, s.now().Unix(), id)
 	if err != nil {
 		return fmt.Errorf("mark sent: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// RevertOneToDraft returns a partially-delivered newsletter from sending back
+// to draft (recipients remain for a follow-up run), accumulating this run's
+// counts. Only valid while status='sending'.
+func (s *Store) RevertOneToDraft(id int64, sent, failed int) error {
+	res, err := s.db.Exec(
+		`UPDATE newsletters SET status='draft',
+		        sent_count=sent_count+?, failed_count=failed_count+?
+		 WHERE id=? AND status='sending'`,
+		sent, failed, id)
+	if err != nil {
+		return fmt.Errorf("revert one to draft: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("newsletter %d not in sending state", id)
 	}
 	return nil
 }
@@ -578,6 +601,62 @@ func (s *Store) ListSendLog(newsletterID int64) ([]SendLogEntry, error) {
 			return nil, err
 		}
 		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// SubscriberSendState pairs an active subscriber with whether this
+// newsletter was already delivered to them (send_log status='sent').
+type SubscriberSendState struct {
+	Subscriber Subscriber
+	Sent       bool
+}
+
+// SubscribersWithSendState lists every active subscriber with a sent flag for
+// the given newsletter — the recipient picker and the "all delivered?" check
+// share this one query. Failed attempts do not count as sent (retryable).
+func (s *Store) SubscribersWithSendState(newsletterID int64) ([]SubscriberSendState, error) {
+	rows, err := s.db.Query(
+		`SELECT `+subscriberCols+`,
+		        EXISTS (SELECT 1 FROM send_log
+		                 WHERE send_log.newsletter_id=? AND send_log.subscriber_id=subscribers.id
+		                   AND send_log.status='sent') AS sent
+		 FROM subscribers WHERE status='active' ORDER BY id`, newsletterID)
+	if err != nil {
+		return nil, fmt.Errorf("subscribers with send state: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SubscriberSendState
+	for rows.Next() {
+		var sub Subscriber
+		var sent bool
+		// 列顺序 = subscriberCols + sent 尾列（sent 必须与 SELECT 尾部对齐）。
+		if err := rows.Scan(&sub.ID, &sub.Email, &sub.Status, &sub.ConfirmToken, &sub.ConfirmExpiresAt,
+			&sub.UnsubToken, &sub.CreatedAt, &sub.ConfirmedAt, &sub.UpdatedAt, &sent); err != nil {
+			return nil, fmt.Errorf("scan subscriber send state: %w", err)
+		}
+		out = append(out, SubscriberSendState{Subscriber: sub, Sent: sent})
+	}
+	return out, rows.Err()
+}
+
+// SentSubscriberIDs returns the set of subscriber ids this newsletter was
+// already delivered to (send_log status='sent'), for send-loop dedup.
+func (s *Store) SentSubscriberIDs(newsletterID int64) (map[int64]bool, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT subscriber_id FROM send_log
+		 WHERE newsletter_id=? AND status='sent'`, newsletterID)
+	if err != nil {
+		return nil, fmt.Errorf("sent subscriber ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan sent id: %w", err)
+		}
+		out[id] = true
 	}
 	return out, rows.Err()
 }
@@ -802,7 +881,7 @@ func (s *Store) ListMedia() ([]Media, error) {
 const (
 	subscriberCols = `id, email, status, confirm_token, COALESCE(confirm_expires_at,0), unsub_token, created_at, COALESCE(confirmed_at,0), updated_at`
 	commentCols    = `id, post_slug, author_name, author_email, content, status, ip_hash, ua, created_at, COALESCE(moderated_at,0)`
-	newsletterCols = `id, subject, markdown, html, status, sent_count, failed_count, created_at, COALESCE(sent_at,0)`
+	newsletterCols = `id, subject, markdown, html, post_url, status, sent_count, failed_count, created_at, COALESCE(sent_at,0)`
 	mediaCols      = `id, key, url, bytes, content_type, created_at`
 )
 
@@ -840,7 +919,7 @@ func scanCommentRows(r rowScanner) (*Comment, error) { return scanComment(r) }
 
 func scanNewsletter(r rowScanner) (*Newsletter, error) {
 	var n Newsletter
-	err := r.Scan(&n.ID, &n.Subject, &n.Markdown, &n.HTML, &n.Status,
+	err := r.Scan(&n.ID, &n.Subject, &n.Markdown, &n.HTML, &n.PostURL, &n.Status,
 		&n.SentCount, &n.FailedCount, &n.CreatedAt, &n.SentAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

@@ -65,7 +65,7 @@ func TestSendToEachActiveWithPersonalUnsub(t *testing.T) {
 		t.Fatalf("seed pending: %v", err)
 	}
 
-	id, err := fx.store.CreateNewsletter("第 1 期", "# md", "<h1>你好</h1>")
+	id, err := fx.store.CreateNewsletter("第 1 期", "# md", "<h1>你好</h1>", "")
 	if err != nil {
 		t.Fatalf("CreateNewsletter: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestSendPartialFailureCounted(t *testing.T) {
 	fake := &mailer.Fake{}
 	fx := newSenderFixture(t, &failOneMailer{inner: fake, bad: "bad@x.com"})
 	seedActive(t, fx.store, "good@x.com", "bad@x.com")
-	id, _ := fx.store.CreateNewsletter("s", "m", "<p>x</p>")
+	id, _ := fx.store.CreateNewsletter("s", "m", "<p>x</p>", "")
 
 	if err := fx.sender.Start(id); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -184,7 +184,7 @@ func TestSendPartialFailureCounted(t *testing.T) {
 func TestStartRejectsNonDraft(t *testing.T) {
 	fx := newSenderFixture(t, &mailer.Fake{})
 	seedActive(t, fx.store, "a@x.com")
-	id, _ := fx.store.CreateNewsletter("s", "m", "h")
+	id, _ := fx.store.CreateNewsletter("s", "m", "h", "")
 
 	if err := fx.sender.Start(id); err != nil {
 		t.Fatalf("first Start: %v", err)
@@ -209,7 +209,7 @@ func TestStartUnknownNewsletter(t *testing.T) {
 
 func TestSendZeroSubscribersStillSent(t *testing.T) {
 	fx := newSenderFixture(t, &mailer.Fake{})
-	id, _ := fx.store.CreateNewsletter("empty", "m", "h")
+	id, _ := fx.store.CreateNewsletter("empty", "m", "h", "")
 	if err := fx.sender.Start(id); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestWaitBlocksUntilDone(t *testing.T) {
 		emails = append(emails, strings.Repeat("x", 1)+string(rune('a'+i))+"@x.com")
 	}
 	seedActive(t, fx.store, emails...)
-	id, _ := fx.store.CreateNewsletter("s", "m", "h")
+	id, _ := fx.store.CreateNewsletter("s", "m", "h", "")
 	if err := fx.sender.Start(id); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

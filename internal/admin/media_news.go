@@ -43,7 +43,7 @@ func (h *Handler) newsletterCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "markdown render failed")
 		return
 	}
-	id, err := h.store.CreateNewsletter(subject, markdown, buf.String())
+	id, err := h.store.CreateNewsletter(subject, markdown, buf.String(), "")
 	if err != nil {
 		h.log.Error("create newsletter", "err", err)
 		writeErr(w, http.StatusInternalServerError, "create failed")
