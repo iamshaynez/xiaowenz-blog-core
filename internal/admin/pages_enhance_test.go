@@ -106,11 +106,19 @@ func TestNewsletterViewShowsRecipientCount(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "2 位订阅者") {
-		t.Errorf("发送确认应显示 active 订阅者数（2 位），页面未见。含 325？%v", strings.Contains(body, "325"))
+	// 新契约：收件人选择器列出全部 active（含未验证退订者排除），
+	// 统计行展示待发送数；发送确认改为 send-form 的 submit 拦截。
+	if !strings.Contains(body, `待发送 <b class="num">2</b>`) {
+		t.Errorf("发送区应显示待发送订阅者数（2），页面未见。含 325？%v", strings.Contains(body, "325"))
 	}
-	if !strings.Contains(body, "confirm-send") {
-		t.Error("发送按钮应带 confirm-send 确认交互")
+	if !strings.Contains(body, "a@x.com") || !strings.Contains(body, "b@x.com") {
+		t.Error("收件人选择器应列出 active 订阅者邮箱")
+	}
+	if strings.Contains(body, "c@x.com") {
+		t.Error("已退订订阅者不应出现在收件人列表")
+	}
+	if !strings.Contains(body, "send-form") {
+		t.Error("发送按钮应带 send-form 确认交互")
 	}
 }
 

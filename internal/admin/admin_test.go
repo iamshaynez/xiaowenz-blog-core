@@ -381,16 +381,26 @@ func TestNewsletterCreatePreviewSend(t *testing.T) {
 		t.Errorf("new page: %d", rec.Code)
 	}
 
-	// Preview renders stored HTML.
+	// View 页嵌入 iframe 全邮件预览；正文 HTML 由 preview 路由渲染。
 	rec = httptest.NewRecorder()
 	fx.handler.ServeHTTP(rec, authed(http.MethodGet, "/admin/newsletters/"+itoa(n.ID), nil, session))
+	if rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `src="/admin/newsletters/`+itoa(n.ID)+`/preview"`) {
+		t.Errorf("view page: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, authed(http.MethodGet, "/admin/newsletters/"+itoa(n.ID)+"/preview", nil, session))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<strong>正文</strong>") {
 		t.Errorf("preview: %d", rec.Code)
 	}
 
-	// Send → background sender delivers.
+	// Send → background sender delivers（表单携带勾选的收件人 ids）。
+	sendForm := url.Values{"ids": {itoa(sub.ID)}}
+	sendReq := authed(http.MethodPost, "/admin/newsletters/"+itoa(n.ID)+"/send",
+		strings.NewReader(sendForm.Encode()), session)
+	sendReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec = httptest.NewRecorder()
-	fx.handler.ServeHTTP(rec, authed(http.MethodPost, "/admin/newsletters/"+itoa(n.ID)+"/send", nil, session))
+	fx.handler.ServeHTTP(rec, sendReq)
 	if rec.Code != http.StatusSeeOther && rec.Code != http.StatusOK {
 		t.Fatalf("send: %d", rec.Code)
 	}
@@ -408,6 +418,131 @@ func TestNewsletterCreatePreviewSend(t *testing.T) {
 	fx.handler.ServeHTTP(rec, authed(http.MethodGet, "/admin/newsletters", nil, session))
 	if !strings.Contains(rec.Body.String(), "sent") {
 		t.Error("list page missing status")
+	}
+}
+
+// 预览路由返回订阅者视角的完整邮件：品牌壳、标题、全文、阅读原文、
+// 退订占位——与实收邮件同一模板。
+func TestNewsletterPreviewRoute(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	id, err := fx.store.CreateNewsletter("文章标题", "m", "<p>全文正文</p>", "https://x.com/p.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, authed(http.MethodGet, "/admin/newsletters/"+itoa(id)+"/preview", nil, session))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preview: %d; body=%s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"三杯过后", "专栏博客文章订阅", "文章标题", "全文正文",
+		"阅读原文", "https://x.com/p.html", "退订",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("预览缺 %q", want)
+		}
+	}
+}
+
+// 草稿页渲染收件人选择器：active 订阅者清单、已发送徽标、
+// iframe 全邮件预览。
+func TestNewsletterViewRecipientPicker(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	a, _ := fx.store.UpsertPending("a@x.com", "ta", time.Now().Add(time.Hour))
+	_ = fx.store.Activate(a.ID)
+	b, _ := fx.store.UpsertPending("b@x.com", "tb", time.Now().Add(time.Hour))
+	_ = fx.store.Activate(b.ID)
+	id, _ := fx.store.CreateNewsletter("选择发送", "m", "<p>x</p>", "")
+	_ = fx.store.InsertSendLog(id, a.ID, "sent", "")
+
+	rec := httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, authed(http.MethodGet, "/admin/newsletters/"+itoa(id), nil, session))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("view: %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`name="ids"`, "a@x.com", "b@x.com", "已发送",
+		`src="/admin/newsletters/` + itoa(id) + `/preview"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("草稿页缺 %q", want)
+		}
+	}
+}
+
+// 勾选发送 + 补发：第一轮只发勾选的（回 draft）；第二轮全选只补发
+// 未发过的；同一地址只收一封；全部发完置 sent。
+func TestNewsletterSendSelectionAndFollowUp(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	a, _ := fx.store.UpsertPending("a@x.com", "ta", time.Now().Add(time.Hour))
+	_ = fx.store.Activate(a.ID)
+	b, _ := fx.store.UpsertPending("b@x.com", "tb", time.Now().Add(time.Hour))
+	_ = fx.store.Activate(b.ID)
+	id, _ := fx.store.CreateNewsletter("分批发送", "m", "<p>x</p>", "")
+
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		req := authed(http.MethodPost, "/admin/newsletters/"+itoa(id)+"/send",
+			strings.NewReader(form.Encode()), session)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		fx.handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// 第一轮测试发送：只勾 a。
+	if rec := post(url.Values{"ids": {itoa(a.ID)}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("send 1: %d; body=%s", rec.Code, rec.Body)
+	}
+	fx.sender.Wait()
+	n, _ := fx.store.GetNewsletter(id)
+	if n.Status != "draft" || n.SentCount != 1 {
+		t.Fatalf("第一轮后 = %+v, want draft/1（等待补发）", n)
+	}
+
+	// 第二轮全选：a 已发过被跳过，只补发 b。
+	if rec := post(url.Values{"ids": {itoa(a.ID), itoa(b.ID)}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("send 2: %d; body=%s", rec.Code, rec.Body)
+	}
+	fx.sender.Wait()
+	n, _ = fx.store.GetNewsletter(id)
+	if n.Status != "sent" || n.SentCount != 2 {
+		t.Errorf("第二轮后 = %+v, want sent/2", n)
+	}
+	got := map[string]int{}
+	for _, m := range fx.mailer.Sent {
+		got[m.To]++
+	}
+	if got["a@x.com"] != 1 || got["b@x.com"] != 1 {
+		t.Errorf("按收件人计数 = %v, want a:1 b:1（同一地址只收一封）", got)
+	}
+}
+
+// 不勾任何收件人提交 → 400，不启动发送。
+func TestNewsletterSendEmptySelectionRejected(t *testing.T) {
+	fx := newAdminFixture(t)
+	session := login(t, fx.handler)
+	id, _ := fx.store.CreateNewsletter("空选", "m", "h", "")
+
+	req := authed(http.MethodPost, "/admin/newsletters/"+itoa(id)+"/send",
+		strings.NewReader(""), session)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("空选择 status = %d, want 400", rec.Code)
+	}
+	n, _ := fx.store.GetNewsletter(id)
+	if n.Status != "draft" {
+		t.Errorf("status = %q, want draft（未启动发送）", n.Status)
 	}
 }
 

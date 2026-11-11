@@ -55,7 +55,8 @@ func (h *Handler) newsletterCreate(w http.ResponseWriter, r *http.Request) {
 	h.redirect(w, r, "/admin/newsletters/"+strconv.FormatInt(id, 10))
 }
 
-// newsletterView previews the stored HTML (trusted: admin-authored).
+// newsletterView renders the draft review page. draft 状态附收件人选择器
+// 数据（active 订阅者 + 本期送达状态）；预览交给 /preview iframe。
 func (h *Handler) newsletterView(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -67,14 +68,53 @@ func (h *Handler) newsletterView(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
-	recipients, err := h.store.CountSubscribers("active", "")
+	data := map[string]any{"Title": n.Subject, "N": n}
+	if n.Status == "draft" {
+		recips, err := h.store.SubscribersWithSendState(id)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "query failed")
+			return
+		}
+		sent := 0
+		for _, rc := range recips {
+			if rc.Sent {
+				sent++
+			}
+		}
+		data["Recipients"] = recips
+		data["RcptTotal"] = len(recips)
+		data["RcptSent"] = sent
+		data["RcptPending"] = len(recips) - sent
+	}
+	h.render(w, "newsletter_view.html", data)
+}
+
+// newsletterPreview 渲染订阅者视角的完整邮件（与发送同一壳模板，
+// 退订链接用 # 占位），供草稿页 iframe 所见即所得预览。
+func (h *Handler) newsletterPreview(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "query failed")
+		writeErr(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	h.render(w, "newsletter_view.html", map[string]any{
-		"Title": n.Subject, "N": n, "HTML": template.HTML(n.HTML), "Recipients": recipients,
+	n, err := h.store.GetNewsletter(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	html, _, err := mailer.RenderNewsletter(mailer.NewsletterShell{
+		Title:          n.Subject,
+		PostURL:        n.PostURL,
+		BodyHTML:       template.HTML(n.HTML), // trusted: admin-authored
+		UnsubURL:       "#",
+		MailingAddress: h.cfg.MailingAddress,
 	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "render failed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(html))
 }
 
 // newsletterDelete removes a draft/sent newsletter (cascades send_log);
@@ -97,19 +137,35 @@ func (h *Handler) newsletterDelete(w http.ResponseWriter, r *http.Request) {
 	h.redirect(w, r, "/admin/newsletters")
 }
 
-// newsletterSend kicks off the background fan-out.
+// newsletterSend kicks off the background fan-out to the checked
+// recipients (form field ids). 已发送过的邮箱由 Sender 判重跳过；
+// 一个都没勾直接拒绝。
 func (h *Handler) newsletterSend(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	if err := h.sender.Start(id, nil); err != nil {
+	if err := r.ParseForm(); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	var ids []int64
+	for _, v := range r.PostForm["ids"] {
+		if sid, err := strconv.ParseInt(v, 10, 64); err == nil {
+			ids = append(ids, sid)
+		}
+	}
+	if len(ids) == 0 {
+		writeErr(w, http.StatusBadRequest, "no recipients selected")
+		return
+	}
+	if err := h.sender.Start(id, ids); err != nil {
 		h.log.Warn("newsletter send rejected", "id", id, "err", err)
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
-	h.log.Info("newsletter send started", "id", id)
+	h.log.Info("newsletter send started", "id", id, "recipients", len(ids))
 	h.redirect(w, r, "/admin/newsletters/"+strconv.FormatInt(id, 10))
 }
 

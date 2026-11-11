@@ -129,6 +129,7 @@ func (h *Handler) Routes() http.Handler {
 	guarded.HandleFunc("POST /admin/newsletters", h.newsletterCreate)
 	guarded.HandleFunc("POST /admin/newsletters/import", h.newsletterImport)
 	guarded.HandleFunc("GET /admin/newsletters/{id}", h.newsletterView)
+	guarded.HandleFunc("GET /admin/newsletters/{id}/preview", h.newsletterPreview)
 	guarded.HandleFunc("POST /admin/newsletters/{id}/send", h.newsletterSend)
 	guarded.HandleFunc("POST /admin/newsletters/{id}/delete", h.newsletterDelete)
 	guarded.HandleFunc("GET /admin/media", h.mediaPage)

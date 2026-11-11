@@ -28,13 +28,13 @@ var emailStyles = map[string]string{
 		"overflow-x:auto;font-size:.9em;line-height:1.55;",
 	"code": "font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;" +
 		"background:#f5f5f5;padding:.15em .35em;border-radius:3px;",
-	"img": "max-width:100%;height:auto;border-radius:6px;margin:.5em 0;",
-	"a":   "color:#222;text-decoration:underline;",
-	"hr":  "border:none;border-top:1px solid #ddd;margin:1.5em 0;",
-	"table": "border-collapse:collapse;margin:0 0 1em;width:100%;font-size:.95em;",
-	"th": "border:1px solid #ddd;padding:.4em .6em;text-align:left;background:#f7f7f7;",
-	"td": "border:1px solid #ddd;padding:.4em .6em;line-height:1.6;",
-	"figure":   "margin:0 0 1em;",
+	"img":        "max-width:100%;height:auto;border-radius:6px;margin:.5em 0;",
+	"a":          "color:#222;text-decoration:underline;",
+	"hr":         "border:none;border-top:1px solid #ddd;margin:1.5em 0;",
+	"table":      "border-collapse:collapse;margin:0 0 1em;width:100%;font-size:.95em;",
+	"th":         "border:1px solid #ddd;padding:.4em .6em;text-align:left;background:#f7f7f7;",
+	"td":         "border:1px solid #ddd;padding:.4em .6em;line-height:1.6;",
+	"figure":     "margin:0 0 1em;",
 	"figcaption": "color:#888;font-size:.85em;margin-top:.4em;line-height:1.5;",
 }
 

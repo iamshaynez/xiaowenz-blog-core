@@ -19,13 +19,32 @@
 
   {{if eq .N.Status "draft"}}
   <div class="card">
-    <header><span class="t">发送</span><span class="hint">邮件一经发出不可撤回</span></header>
-    <div class="body" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
-      <span>将发送给 <b class="num">{{.Recipients}}</b> 位订阅者（active）。</span>
-      <form method="POST" action="/admin/newsletters/{{.N.ID}}/send" class="confirm-send"
-            data-n="{{.Recipients}}"
-            onsubmit="return confirm('确认向 ' + this.dataset.n + ' 位订阅者发送本邮件？\n发送后不可撤回。')">
-        <button class="btn danger" type="submit">发送给 {{.Recipients}} 位订阅者</button>
+    <header><span class="t">发送</span><span class="hint">邮件一经发出不可撤回 · 已发送过的邮箱不会重复收到</span></header>
+    <div class="body">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:12px;">
+        <span>全部 <b class="num">{{.RcptTotal}}</b> · 已发送 <b class="num">{{.RcptSent}}</b> · 待发送 <b class="num">{{.RcptPending}}</b></span>
+        <button type="button" class="btn small ghost" onclick="pickAll(true)">全选待发送</button>
+        <button type="button" class="btn small ghost" onclick="pickAll(false)">清空</button>
+        <input type="search" id="rcpt-filter" placeholder="搜索邮箱…" oninput="filterRows()"
+               style="margin-left:auto;padding:4px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;">
+      </div>
+      <form method="POST" action="/admin/newsletters/{{.N.ID}}/send" id="send-form">
+        <div id="rcpt-list" style="max-height:320px;overflow-y:auto;border:1px solid #eee;border-radius:6px;">
+          {{range .Recipients}}
+          <label class="rcpt-row" data-email="{{.Subscriber.Email}}"
+                 style="display:flex;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid #f5f5f5;cursor:pointer;">
+            <input type="checkbox" name="ids" value="{{.Subscriber.ID}}" {{if .Sent}}disabled{{else}}checked{{end}}>
+            <span style="flex:1;">{{.Subscriber.Email}}</span>
+            {{if .Sent}}<span class="badge sent">已发送</span>{{end}}
+          </label>
+          {{else}}
+          <div style="padding:16px;color:#999;">没有待发送的订阅者。</div>
+          {{end}}
+        </div>
+        <div style="margin-top:12px;display:flex;gap:12px;align-items:center;">
+          <button class="btn danger" type="submit">发送给已选 <span id="pick-count" class="num">0</span> 位</button>
+          <span class="hint">同一邮箱地址不会收到第二次</span>
+        </div>
       </form>
     </div>
   </div>
@@ -37,9 +56,50 @@
 
   <div class="card">
     <header><span class="t">邮件预览（订阅者视角）</span></header>
-    <div class="body">
-      <div class="mail-preview">{{.HTML}}</div>
+    <div class="body" style="padding:0;">
+      <iframe src="/admin/newsletters/{{.N.ID}}/preview" id="mail-frame" title="邮件预览"
+              style="width:100%;min-height:600px;border:0;border-radius:0 0 8px 8px;display:block;background:#f7f7f7;"></iframe>
     </div>
   </div>
 </main>
+<script>
+(function () {
+  var form = document.getElementById('send-form');
+  if (form) {
+    var count = document.getElementById('pick-count');
+    var submit = form.querySelector('button[type=submit]');
+    function update() {
+      var n = form.querySelectorAll('input[name=ids]:checked').length;
+      count.textContent = n;
+      submit.disabled = n === 0;
+    }
+    form.addEventListener('change', update);
+    window.pickAll = function (on) {
+      form.querySelectorAll('input[name=ids]').forEach(function (cb) {
+        if (!cb.disabled) cb.checked = on;
+      });
+      update();
+    };
+    window.filterRows = function () {
+      var q = document.getElementById('rcpt-filter').value.toLowerCase();
+      document.querySelectorAll('.rcpt-row').forEach(function (row) {
+        row.style.display = row.dataset.email.indexOf(q) >= 0 ? '' : 'none';
+      });
+    };
+    form.addEventListener('submit', function (ev) {
+      if (!confirm('确认向 ' + count.textContent + ' 位订阅者发送本邮件？\n发送后不可撤回。')) ev.preventDefault();
+    });
+    update();
+  }
+  var frame = document.getElementById('mail-frame');
+  function fit() {
+    try {
+      var h = frame.contentDocument.documentElement.scrollHeight;
+      frame.style.height = Math.max(h, 600) + 'px';
+    } catch (e) { /* 跨域异常时保持 min-height */ }
+  }
+  frame.addEventListener('load', fit);
+  setInterval(fit, 1000);
+})();
+</script>
 </body></html>

@@ -452,7 +452,7 @@ type Newsletter struct {
 }
 
 // CreateNewsletter stores a rendered draft. postURL is the source article
-// URL for imported drafts ('' for hand-written ones).
+// URL for imported drafts (” for hand-written ones).
 func (s *Store) CreateNewsletter(subject, markdown, html, postURL string) (int64, error) {
 	res, err := s.db.Exec(
 		`INSERT INTO newsletters (subject, markdown, html, post_url, status, created_at)
