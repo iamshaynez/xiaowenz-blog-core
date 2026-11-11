@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"strings"
 )
 
 //go:embed templates/*.html
@@ -62,21 +63,33 @@ func RenderCommentNotify(n CommentNotice) (html, text string, err error) {
 	return html, text, nil
 }
 
-// NewsletterShell carries the newsletter body plus footer fields.
+// NewsletterShell carries the newsletter article plus footer fields.
 type NewsletterShell struct {
-	BodyHTML       template.HTML
-	UnsubURL       string
+	Title          string        // 文章大标题（= 邮件主题）
+	PostURL        string        // 来源文章地址（空 = 手动撰写，隐藏「阅读原文」）
+	BodyHTML       template.HTML // 邮件化后的全文正文（EmailizeHTML 产物）
+	UnsubURL       string        // 收件人专属退订链接
 	MailingAddress string
 }
 
-// RenderNewsletter wraps rendered markdown HTML in the brand shell with a
-// personal unsubscribe link and the physical mailing address.
+// RenderNewsletter wraps the full-article body in the brand shell: 页眉品牌
+// 行、文章标题、全文、「阅读原文」按钮与退订页脚。text 备选携带真实正文
+// 纯文本，不再是占位文案。
 func RenderNewsletter(s NewsletterShell) (html, text string, err error) {
 	html, err = render("newsletter.html", s)
 	if err != nil {
 		return "", "", err
 	}
-	text = "「三杯过后」通讯\n\n（本期为 HTML 内容，请在支持 HTML 的客户端中查看。）\n\n" +
-		"退订本通讯：" + s.UnsubURL + "\n" + s.MailingAddress
-	return html, text, nil
+	var b strings.Builder
+	if s.Title != "" {
+		b.WriteString(s.Title + "\n\n")
+	}
+	if body := htmlToText(string(s.BodyHTML)); body != "" {
+		b.WriteString(body + "\n\n")
+	}
+	if s.PostURL != "" {
+		b.WriteString("阅读原文：" + s.PostURL + "\n\n")
+	}
+	b.WriteString("——\n「三杯过后」专栏博客文章订阅\n退订本通讯：" + s.UnsubURL + "\n" + s.MailingAddress + "\n")
+	return html, b.String(), nil
 }
