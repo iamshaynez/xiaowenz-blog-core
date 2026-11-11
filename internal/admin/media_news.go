@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/iamshaynez/xiaowenz-blog-core/internal/mailer"
 	"github.com/yuin/goldmark"
 )
 
@@ -43,7 +44,8 @@ func (h *Handler) newsletterCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "markdown render failed")
 		return
 	}
-	id, err := h.store.CreateNewsletter(subject, markdown, buf.String(), "")
+	// 手动草稿同样邮件化（注入 inline style；无来源 URL，不做绝对化）。
+	id, err := h.store.CreateNewsletter(subject, markdown, mailer.EmailizeHTML(buf.String(), ""), "")
 	if err != nil {
 		h.log.Error("create newsletter", "err", err)
 		writeErr(w, http.StatusInternalServerError, "create failed")
