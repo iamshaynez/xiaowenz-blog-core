@@ -102,7 +102,7 @@ func (h *Handler) newsletterSend(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	if err := h.sender.Start(id); err != nil {
+	if err := h.sender.Start(id, nil); err != nil {
 		h.log.Warn("newsletter send rejected", "id", id, "err", err)
 		writeErr(w, http.StatusConflict, err.Error())
 		return
